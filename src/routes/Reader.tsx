@@ -43,7 +43,7 @@ export default function Reader() {
   const speechRate = useReaderStore((s) => s.speechRate)
 
   const fontSize = useSettingsStore((s) => s.fontSize)
-  const { startPlayback, pausePlayback, resumePlayback, stopPlayback } = useSpeech()
+  const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode } = useSpeech()
   useMediaSession()
 
   const paraRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -215,8 +215,11 @@ export default function Reader() {
           ←
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-medium text-sm truncate">
+          <h2 className="font-medium text-sm truncate flex items-center gap-2">
             {book.title}
+            {ttsMode === 'cloud' && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 rounded-full flex-shrink-0">云端</span>
+            )}
           </h2>
           <p className="text-xs text-slate-400">
             {formatTime(currentSeconds)} / {formatTime(totalSeconds)} · {currentParaIndex + 1}/{book.paragraphs.length}段
