@@ -89,8 +89,8 @@ export interface ReaderState {
   sessionStartMs: number | null
 }
 
-// 中文 TTS 大约每秒 4 个字符（1x 倍速基准）
-export const CHARS_PER_SECOND = 4
+// 中文 TTS 大约每秒 3~4 个字符（1x 倍速基准），取保守值避免提前跳段
+export const CHARS_PER_SECOND = 3
 
 // 估算总时长（秒）
 export function estimateTotalSeconds(totalChars: number, rate: number): number {

@@ -41,6 +41,7 @@ export function useSpeech() {
   const voiceRef = useRef('')
   const isPlayingRef = useRef(false)
   const paraStartRef = useRef(0)
+  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null) // 全局唯一的计时器
 
   // Cloud
   const playerRef = useRef<AudioPlayer | null>(null)
@@ -83,7 +84,6 @@ export function useSpeech() {
       if (v) utter.voice = v
     }
 
-    let localTimer: ReturnType<typeof setInterval> | null = null
     const startTime = Date.now()
     const offsets = batch.paraOffsets
     const batchStart = batch.startIndex
@@ -96,28 +96,27 @@ export function useSpeech() {
       }
       const globalIdx = batchStart + paraInBatch
       if (globalIdx >= paragraphsRef.current.length) return
-      if (globalIdx !== currentIndexRef.current) {
-        useReaderStore.getState().setCurrentParagraph(globalIdx)
+      const store = useReaderStore.getState()
+      if (globalIdx !== store.currentParaIndex) {
+        setCurrentParagraph(globalIdx)
       }
       const paraStart = offsets[paraInBatch] ?? 0
       const off = Math.max(0, ci - paraStart)
       const maxOff = Math.max(0, (paragraphsRef.current[globalIdx] || '').length - 1)
-      const store = useReaderStore.getState()
-      if (off > store.currentCharOffset) {
+      if (off > store.currentCharOffset + 2) {
         setCurrentCharOffset(Math.min(off, maxOff))
       }
     }
 
-    utter.onboundary = (e) => updatePosition(e.charIndex)
-
     utter.onstart = () => {
       updatePosition(0)
-      // 启动 utterance 内部计时器（200ms 间隔）
-      localTimer = setInterval(() => updatePosition(), 200)
+      // 全局锁：同一时间只有一个计时器
+      if (activeTimerRef.current) clearInterval(activeTimerRef.current)
+      activeTimerRef.current = setInterval(() => updatePosition(), 600)
     }
 
     utter.onend = () => {
-      if (localTimer) clearInterval(localTimer)
+      if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       const nextFrom = batchStart + BATCH_SIZE
       const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
       if (nextBatch && isPlayingRef.current) {
@@ -129,7 +128,7 @@ export function useSpeech() {
     }
 
     utter.onerror = () => {
-      if (localTimer) clearInterval(localTimer)
+      if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
     }
 
     return utter
