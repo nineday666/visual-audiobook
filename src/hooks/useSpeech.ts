@@ -41,7 +41,8 @@ export function useSpeech() {
   const voiceRef = useRef('')
   const isPlayingRef = useRef(false)
   const paraStartRef = useRef(0)
-  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null) // 全局唯一的计时器
+  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const calibratedCpsRef = useRef(CHARS_PER_SECOND) // 自校准语速，随播放逐步收敛
 
   // Cloud
   const playerRef = useRef<AudioPlayer | null>(null)
@@ -87,7 +88,7 @@ export function useSpeech() {
     const startTime = Date.now()
     const offsets = batch.paraOffsets
     const batchStart = batch.startIndex
-    let boundaryFired = false // 如果 onboundary 触发过，就不需要计时器估算
+    let boundaryFired = false
 
     const applyPosition = (ci: number) => {
       let paraInBatch = 0
@@ -108,25 +109,30 @@ export function useSpeech() {
       }
     }
 
-    // onboundary：精确位置（桌面端可用）
     utter.onboundary = (e) => {
       boundaryFired = true
       applyPosition(e.charIndex)
     }
 
     utter.onstart = () => {
-      // 全局锁：清除旧计时器
       if (activeTimerRef.current) clearInterval(activeTimerRef.current)
-      // 启动兜底计时器（只在 onboundary 不触发时生效）
       activeTimerRef.current = setInterval(() => {
-        if (boundaryFired) return // onboundary 已经接管，不需要估算
-        const ci = Math.floor((Date.now() - startTime) / 1000 * CHARS_PER_SECOND * rateRef.current)
+        if (boundaryFired) return
+        const ci = Math.floor((Date.now() - startTime) / 1000 * calibratedCpsRef.current * rateRef.current)
         applyPosition(ci)
       }, 500)
     }
 
     utter.onend = () => {
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
+      // 自校准：根据实际耗时计算真实语速（仅在无 onboundary 的手机端）
+      if (!boundaryFired) {
+        const elapsed = (Date.now() - startTime) / 1000
+        if (elapsed > 2) {
+          const actualCps = batch.text.length / elapsed / rateRef.current
+          calibratedCpsRef.current = calibratedCpsRef.current * 0.5 + actualCps * 0.5
+        }
+      }
       const nextFrom = batchStart + BATCH_SIZE
       const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
       if (nextBatch && isPlayingRef.current) {
