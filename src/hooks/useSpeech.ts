@@ -42,7 +42,8 @@ export function useSpeech() {
   const isPlayingRef = useRef(false)
   const paraStartRef = useRef(0)
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const calibratedCpsRef = useRef(CHARS_PER_SECOND) // 自校准语速，随播放逐步收敛
+  const calibratedCpsRef = useRef(CHARS_PER_SECOND)
+  const queuedBatchesRef = useRef(new Set<number>()) // 跟踪已排队的批次，避免重复
 
   // Cloud
   const playerRef = useRef<AudioPlayer | null>(null)
@@ -125,7 +126,6 @@ export function useSpeech() {
 
     utter.onend = () => {
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
-      // 自校准：根据实际耗时计算真实语速（仅在无 onboundary 的手机端）
       if (!boundaryFired) {
         const elapsed = (Date.now() - startTime) / 1000
         if (elapsed > 2) {
@@ -133,13 +133,20 @@ export function useSpeech() {
           calibratedCpsRef.current = calibratedCpsRef.current * 0.5 + actualCps * 0.5
         }
       }
+      queuedBatchesRef.current.delete(batchStart)
       const nextFrom = batchStart + BATCH_SIZE
-      const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
-      if (nextBatch && isPlayingRef.current) {
-        const nextU = makeBatchUtter(nextFrom)
-        if (nextU) speechSynthesis.speak(nextU)
-      } else {
-        stopAction()
+      // 防止重复排队
+      if (!queuedBatchesRef.current.has(nextFrom)) {
+        const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
+        if (nextBatch && isPlayingRef.current) {
+          const nextU = makeBatchUtter(nextFrom)
+          if (nextU) {
+            queuedBatchesRef.current.add(nextFrom)
+            speechSynthesis.speak(nextU)
+          }
+        } else if (!nextBatch) {
+          stopAction()
+        }
       }
     }
 
@@ -150,16 +157,19 @@ export function useSpeech() {
     return utter
   }, [speechPitch, setCurrentCharOffset, stopAction])
 
-  // 启动本地播放：一次排队 3 个批次，确保前两个无间隔
+  // 启动本地播放：排当前+预排一个，用 Set 防止重复
   const speakBatch = useCallback((fromIndex: number) => {
+    queuedBatchesRef.current.clear()
     const u1 = makeBatchUtter(fromIndex)
-    const u2 = makeBatchUtter(fromIndex + BATCH_SIZE)
-    const u3 = makeBatchUtter(fromIndex + BATCH_SIZE * 2)
-
     if (!u1) return
+    queuedBatchesRef.current.add(fromIndex)
     speechSynthesis.speak(u1)
-    if (u2) speechSynthesis.speak(u2)
-    if (u3) speechSynthesis.speak(u3)
+    // 预排下一个批次（减少间隔），但只排一个
+    const u2 = makeBatchUtter(fromIndex + BATCH_SIZE)
+    if (u2) {
+      queuedBatchesRef.current.add(fromIndex + BATCH_SIZE)
+      speechSynthesis.speak(u2)
+    }
   }, [makeBatchUtter])
 
   // === 云端模式 ===
@@ -231,7 +241,7 @@ export function useSpeech() {
 
   const stopPlayback = useCallback(() => {
     if (mode === 'cloud' && playerRef.current) playerRef.current.stop()
-    else speechSynthesis.cancel()
+    else { speechSynthesis.cancel(); queuedBatchesRef.current.clear() }
     stopAction()
   }, [mode, stopAction])
 
@@ -243,6 +253,7 @@ export function useSpeech() {
     } else {
       const idx = currentIndexRef.current
       speechSynthesis.cancel()
+      queuedBatchesRef.current.clear()
       speakBatch(idx)
     }
   }, [speechRate, mode, speakBatch])
