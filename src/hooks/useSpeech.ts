@@ -5,27 +5,52 @@ import { getEdgeTts, hasProxyUrl } from '../services/edge-tts'
 import { AudioPlayer } from '../services/audio-player'
 import { CHARS_PER_SECOND } from '../types'
 
+const BATCH_SIZE = 8 // 每批次合并的段落数
+
 type TtsMode = 'cloud' | 'local'
 
+// 构建批次：把多个段落合并为一个 utterance 文本，记录每个段落在大文本中的起始字符位置
+interface Batch {
+  text: string
+  paraOffsets: number[] // paraOffsets[i] = 段落 i 在 text 中的起始 charIndex
+  startIndex: number    // 第一个段落在全文中的索引
+}
+
+function buildBatch(paragraphs: string[], fromIndex: number): Batch | null {
+  let text = ''
+  const paraOffsets: number[] = []
+  let count = 0
+  for (let i = fromIndex; i < paragraphs.length && count < BATCH_SIZE; i++) {
+    const p = paragraphs[i]
+    if (p.trim()) {
+      paraOffsets.push(text.length)
+      text += p + '\n\n'
+      count++
+    }
+  }
+  if (!text.trim()) return null
+  return { text, paraOffsets, startIndex: fromIndex }
+}
+
 export function useSpeech() {
-  // === 云端 / 本地 双模式 ===
   const [mode, setMode] = useState<TtsMode>('local')
 
-  // === Refs ===
   const paragraphsRef = useRef<string[]>([])
   const currentIndexRef = useRef(0)
   const rateRef = useRef(1.0)
   const voiceRef = useRef('')
   const isPlayingRef = useRef(false)
-  const queuedRef = useRef(new Set<number>())
   const paraStartRef = useRef(0)
+  // 批次内的段落偏移
+  const batchOffsetsRef = useRef<number[]>([])
+  const batchStartRef = useRef(0)
 
-  // Cloud: AudioPlayer + Edge TTS
+  // Cloud
   const playerRef = useRef<AudioPlayer | null>(null)
   const ttsRef = useRef(getEdgeTts())
   const fetchingRef = useRef(new Set<number>())
+  const audioCacheRef = useRef(new Map<number, ArrayBuffer>())
 
-  // Zustand
   const paragraphs = useReaderStore((s) => s.paragraphs)
   const currentParaIndex = useReaderStore((s) => s.currentParaIndex)
   const speechRate = useReaderStore((s) => s.speechRate)
@@ -45,15 +70,15 @@ export function useSpeech() {
   voiceRef.current = selectedVoiceURI
   isPlayingRef.current = isPlaying
 
-  // === 本地模式：Web Speech 队列（不需要 cancel） ===
-  const queueLocal = useCallback((index: number) => {
-    if (index >= paragraphsRef.current.length) return
-    if (queuedRef.current.has(index)) return
-    const text = paragraphsRef.current[index]
-    if (!text?.trim()) { queuedRef.current.add(index); queueLocal(index + 1); return }
-    queuedRef.current.add(index)
+  // === 本地模式：批次合成（一个大 utterance 包含多段，几乎零间隔） ===
+  const speakBatch = useCallback((fromIndex: number) => {
+    const batch = buildBatch(paragraphsRef.current, fromIndex)
+    if (!batch) return
 
-    const utter = new SpeechSynthesisUtterance(text)
+    batchOffsetsRef.current = batch.paraOffsets
+    batchStartRef.current = batch.startIndex
+
+    const utter = new SpeechSynthesisUtterance(batch.text)
     utter.rate = rateRef.current
     utter.pitch = speechPitch
     utter.lang = 'zh-CN'
@@ -64,34 +89,59 @@ export function useSpeech() {
       if (v) utter.voice = v
     }
 
-    utter.onboundary = (e) => { if (index === currentIndexRef.current) setCurrentCharOffset(e.charIndex) }
-    utter.onstart = () => {
-      if (index !== currentIndexRef.current) { useReaderStore.getState().setCurrentParagraph(index); paraStartRef.current = Date.now() }
+    utter.onboundary = (e) => {
+      // 根据 charIndex 在批次偏移中查找当前段落
+      const offs = batchOffsetsRef.current
+      let paraInBatch = 0
+      for (let i = offs.length - 1; i >= 0; i--) {
+        if (e.charIndex >= offs[i]) { paraInBatch = i; break }
+      }
+      const globalIndex = batchStartRef.current + paraInBatch
+      if (globalIndex !== currentIndexRef.current) {
+        useReaderStore.getState().setCurrentParagraph(globalIndex)
+        paraStartRef.current = Date.now()
+      }
+      // 段内偏移
+      const paraStart = offs[paraInBatch] ?? 0
+      const charOff = e.charIndex - paraStart
+      setCurrentCharOffset(charOff)
     }
-    utter.onend = () => {
-      queuedRef.current.delete(index)
-      const maxQ = Math.max(...queuedRef.current, index)
-      for (let i = maxQ + 1; i <= index + 4 && i < paragraphsRef.current.length; i++) queueLocal(i)
-    }
-    utter.onerror = () => queuedRef.current.delete(index)
-    speechSynthesis.speak(utter)
-  }, [speechPitch, setCurrentCharOffset])
 
-  // === 云端模式：Edge TTS → AudioPlayer ===
+    utter.onstart = () => {
+      paraStartRef.current = Date.now()
+      setCurrentParagraph(fromIndex)
+      setCurrentCharOffset(0)
+    }
+
+    utter.onend = () => {
+      // 播下一个批次
+      const nextFrom = fromIndex + BATCH_SIZE
+      if (nextFrom < paragraphsRef.current.length && isPlayingRef.current) {
+        speakBatch(nextFrom)
+      } else {
+        stopAction()
+      }
+    }
+
+    utter.onerror = () => {
+      if (isPlayingRef.current) speakBatch(fromIndex + BATCH_SIZE)
+    }
+
+    speechSynthesis.speak(utter)
+  }, [speechPitch, setCurrentParagraph, setCurrentCharOffset, stopAction])
+
+  // === 云端模式 ===
   const initPlayer = useCallback((): AudioPlayer => {
     if (playerRef.current) return playerRef.current
     const p = new AudioPlayer()
     p.setCallbacks({
       onStart: (idx) => { setCurrentParagraph(idx); paraStartRef.current = Date.now() },
-      onEnd: (idx) => prefetchCloud(idx + 1),
+      onEnd: () => {},
       onProgress: (idx, off) => { if (idx === currentIndexRef.current) setCurrentCharOffset(off) },
     })
     playerRef.current = p
     return p
   }, [setCurrentParagraph, setCurrentCharOffset])
-
-  // 缓存：已获取的音频 buffer（避免重复请求）
-  const audioCacheRef = useRef(new Map<number, ArrayBuffer>())
 
   const fetchAndBuffer = useCallback(async (index: number) => {
     if (index < 0 || index >= paragraphsRef.current.length) return
@@ -99,37 +149,27 @@ export function useSpeech() {
     const text = paragraphsRef.current[index]
     if (!text?.trim()) { fetchingRef.current.add(index); return }
     fetchingRef.current.add(index)
-
-    // 检查缓存
     let buf = audioCacheRef.current.get(index)
     if (!buf) {
-      try {
-        buf = await ttsRef.current.synthesize(text)
-        audioCacheRef.current.set(index, buf)
-      } catch { return }
+      try { buf = await ttsRef.current.synthesize(text); audioCacheRef.current.set(index, buf) } catch { return }
     }
-
     const player = playerRef.current!
     player.setParaCharLength(index, text.length)
     await player.preload(index, buf)
   }, [])
 
   const prefetchCloud = useCallback((from: number) => {
-    // 预取当前及后续 3 段（从缓存或 TTS）
     for (let i = from; i < from + 4 && i < paragraphsRef.current.length; i++) fetchAndBuffer(i)
   }, [fetchAndBuffer])
 
-  // === 公开 API ===
+  // === API ===
   const startPlayback = useCallback(async (paraIndex?: number) => {
     const idx = paraIndex ?? currentIndexRef.current
     currentIndexRef.current = idx
 
     if (hasProxyUrl()) {
-      // 云端模式
       setMode('cloud')
       speechSynthesis.cancel()
-      queuedRef.current.clear()
-
       const player = initPlayer()
       player.clearQueue()
       player.setRate(rateRef.current)
@@ -138,17 +178,12 @@ export function useSpeech() {
       player.play(idx)
       playAction()
     } else {
-      // 本地模式
       setMode('local')
       speechSynthesis.cancel()
-      queuedRef.current.clear()
-      for (let i = idx; i < idx + 4 && i < paragraphsRef.current.length; i++) queueLocal(i)
-      paraStartRef.current = Date.now()
-      setCurrentParagraph(idx)
-      setCurrentCharOffset(0)
+      speakBatch(idx)
       playAction()
     }
-  }, [queueLocal, initPlayer, prefetchCloud, setCurrentParagraph, setCurrentCharOffset, playAction])
+  }, [speakBatch, initPlayer, prefetchCloud, playAction])
 
   const pausePlayback = useCallback(() => {
     if (mode === 'cloud' && playerRef.current) playerRef.current.pause()
@@ -164,11 +199,11 @@ export function useSpeech() {
 
   const stopPlayback = useCallback(() => {
     if (mode === 'cloud' && playerRef.current) playerRef.current.stop()
-    else { speechSynthesis.cancel(); queuedRef.current.clear() }
+    else speechSynthesis.cancel()
     stopAction()
   }, [mode, stopAction])
 
-  // 倍速变化 → 实时生效（云端改 playbackRate，本地重排队）
+  // 倍速变化
   useEffect(() => {
     if (!isPlayingRef.current) return
     if (mode === 'cloud' && playerRef.current) {
@@ -176,12 +211,11 @@ export function useSpeech() {
     } else {
       const idx = currentIndexRef.current
       speechSynthesis.cancel()
-      queuedRef.current.clear()
-      for (let i = idx; i < idx + 4 && i < paragraphsRef.current.length; i++) queueLocal(i)
+      speakBatch(idx)
     }
-  }, [speechRate, mode, queueLocal])
+  }, [speechRate, mode, speakBatch])
 
-  // 进度定时器（手机兜底）
+  // 进度定时器
   useEffect(() => {
     if (!isPlaying || mode === 'cloud') return
     const timer = setInterval(() => {
@@ -196,15 +230,7 @@ export function useSpeech() {
     return () => clearInterval(timer)
   }, [isPlaying, mode, setCurrentCharOffset])
 
-  // 清理
   useEffect(() => () => { playerRef.current?.destroy() }, [])
 
-  return {
-    isSpeaking: isPlaying,
-    ttsMode: mode,
-    startPlayback,
-    pausePlayback,
-    resumePlayback,
-    stopPlayback,
-  }
+  return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback }
 }
