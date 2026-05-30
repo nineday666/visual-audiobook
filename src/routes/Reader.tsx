@@ -43,7 +43,7 @@ export default function Reader() {
   const speechRate = useReaderStore((s) => s.speechRate)
 
   const fontSize = useSettingsStore((s) => s.fontSize)
-  const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsStatus } = useSpeech()
+  const { startPlayback, pausePlayback, resumePlayback, stopPlayback } = useSpeech()
   useMediaSession()
 
   const paraRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -215,17 +215,8 @@ export default function Reader() {
           ←
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-medium text-sm truncate flex items-center gap-2">
+          <h2 className="font-medium text-sm truncate">
             {book.title}
-            {ttsStatus === 'cloud' && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 rounded flex-shrink-0">云端</span>
-            )}
-            {ttsStatus === 'fallback' && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded flex-shrink-0">离线</span>
-            )}
-            {ttsStatus === 'connecting' && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded flex-shrink-0 animate-pulse">连接中</span>
-            )}
           </h2>
           <p className="text-xs text-slate-400">
             {formatTime(currentSeconds)} / {formatTime(totalSeconds)} · {currentParaIndex + 1}/{book.paragraphs.length}段
