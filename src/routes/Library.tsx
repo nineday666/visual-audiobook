@@ -6,21 +6,7 @@ import { addBook as addBookToDb } from '../services/db'
 import type { Book } from '../types'
 import FileDropZone from '../components/common/FileDropZone'
 import BookCard from '../components/library/BookCard'
-
-const COVER_COLORS = [
-  'from-blue-500 to-indigo-600',
-  'from-emerald-500 to-teal-600',
-  'from-violet-500 to-purple-600',
-  'from-orange-500 to-red-500',
-  'from-cyan-500 to-blue-600',
-  'from-pink-500 to-rose-600',
-  'from-amber-500 to-orange-600',
-  'from-green-500 to-emerald-600',
-]
-
-function randomCoverColor(): string {
-  return COVER_COLORS[Math.floor(Math.random() * COVER_COLORS.length)]
-}
+import { getCoverStyle } from '../utils/cover'
 
 export default function Library() {
   const [books, setBooks] = useState<Book[]>([])
@@ -47,7 +33,7 @@ export default function Library() {
         const parsed = await parseFile(file)
         const book: Book = {
           ...parsed,
-          coverColor: randomCoverColor(),
+          coverColor: getCoverStyle(parsed.title).bg,
         }
         await addBookToDb(book)
         await refreshBooks()
