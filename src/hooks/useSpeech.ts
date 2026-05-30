@@ -16,7 +16,7 @@ interface Batch {
   startIndex: number    // 第一个段落在全文中的索引
 }
 
-function buildBatch(paragraphs: string[], fromIndex: number): Batch | null {
+function buildBatch(paragraphs: string[], fromIndex: number, firstParaOffset = 0): Batch | null {
   let text = ''
   const paraOffsets: number[] = []
   let count = 0
@@ -24,7 +24,8 @@ function buildBatch(paragraphs: string[], fromIndex: number): Batch | null {
     const p = paragraphs[i]
     if (p.trim()) {
       paraOffsets.push(text.length)
-      text += p + '\n\n'
+      // 第一个段落可以从中间截断（恢复暂停位置）
+      text += (i === fromIndex ? p.slice(firstParaOffset) : p) + '\n\n'
       count++
     }
   }
@@ -70,9 +71,9 @@ export function useSpeech() {
   voiceRef.current = selectedVoiceURI
   isPlayingRef.current = isPlaying
 
-  // 创建单个批次的 utterance（自带计时器模拟 onboundary，手机端兜底）
-  const makeBatchUtter = useCallback((fromIndex: number) => {
-    const batch = buildBatch(paragraphsRef.current, fromIndex)
+  // 创建单个批次的 utterance
+  const makeBatchUtter = useCallback((fromIndex: number, firstParaOffset = 0) => {
+    const batch = buildBatch(paragraphsRef.current, fromIndex, firstParaOffset)
     if (!batch) return null
 
     const utter = new SpeechSynthesisUtterance(batch.text)
@@ -87,11 +88,13 @@ export function useSpeech() {
     }
 
     const startTime = Date.now()
+    const startOffset = firstParaOffset // 第一个段落跳过的字符数
     const offsets = batch.paraOffsets
     const batchStart = batch.startIndex
     let boundaryFired = false
 
     const applyPosition = (ci: number) => {
+      // ci 是 utterance 内的字符位置；第一个段落的实际全文位置 = startOffset + ci
       let paraInBatch = 0
       for (let i = offsets.length - 1; i >= 0; i--) {
         if (ci >= offsets[i]) { paraInBatch = i; break }
@@ -103,7 +106,11 @@ export function useSpeech() {
         setCurrentParagraph(globalIdx)
       }
       const paraStart = offsets[paraInBatch] ?? 0
-      const off = Math.max(0, ci - paraStart)
+      let off = Math.max(0, ci - paraStart)
+      // 第一个段落需要加上跳过的偏移
+      if (paraInBatch === 0 && startOffset > 0) {
+        off += startOffset
+      }
       const maxOff = Math.max(0, (paragraphsRef.current[globalIdx] || '').length - 1)
       if (off > store.currentCharOffset) {
         setCurrentCharOffset(Math.min(off, maxOff))
@@ -157,14 +164,13 @@ export function useSpeech() {
     return utter
   }, [speechPitch, setCurrentCharOffset, stopAction])
 
-  // 启动本地播放：排当前+预排一个，用 Set 防止重复
-  const speakBatch = useCallback((fromIndex: number) => {
+  // 启动本地播放：支持从段落中间恢复
+  const speakBatch = useCallback((fromIndex: number, firstParaOffset = 0) => {
     queuedBatchesRef.current.clear()
-    const u1 = makeBatchUtter(fromIndex)
+    const u1 = makeBatchUtter(fromIndex, firstParaOffset)
     if (!u1) return
     queuedBatchesRef.current.add(fromIndex)
     speechSynthesis.speak(u1)
-    // 预排下一个批次（减少间隔），但只排一个
     const u2 = makeBatchUtter(fromIndex + BATCH_SIZE)
     if (u2) {
       queuedBatchesRef.current.add(fromIndex + BATCH_SIZE)
@@ -222,7 +228,9 @@ export function useSpeech() {
     } else {
       setMode('local')
       speechSynthesis.cancel()
-      speakBatch(idx)
+      // 从暂停位置恢复：传递当前字符偏移
+      const savedOffset = useReaderStore.getState().currentCharOffset
+      speakBatch(idx, savedOffset > 0 ? savedOffset : 0)
       playAction()
     }
   }, [speakBatch, initPlayer, prefetchCloud, playAction])
@@ -234,10 +242,19 @@ export function useSpeech() {
   }, [mode, pauseAction])
 
   const resumePlayback = useCallback(() => {
-    if (mode === 'cloud' && playerRef.current) playerRef.current.resume()
-    else speechSynthesis.resume()
-    playAction()
-  }, [mode, playAction])
+    if (mode === 'cloud' && playerRef.current) {
+      playerRef.current.resume()
+      playAction()
+    } else {
+      // 本地模式：取消暂停的语音，从断点重新开始
+      const idx = currentIndexRef.current
+      const offset = useReaderStore.getState().currentCharOffset
+      speechSynthesis.cancel()
+      queuedBatchesRef.current.clear()
+      speakBatch(idx, offset > 0 ? offset : 0)
+      playAction()
+    }
+  }, [mode, playAction, speakBatch])
 
   const stopPlayback = useCallback(() => {
     if (mode === 'cloud' && playerRef.current) playerRef.current.stop()
