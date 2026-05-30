@@ -27,10 +27,12 @@ export interface AppSettings {
   speechPitch: number
   preferredVoiceURI: string
   fontSize: FontSize
+  lineHeight: LineHeight
   theme: Theme
 }
 
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl'
+export type LineHeight = 'compact' | 'normal' | 'relaxed'
 export type Theme = 'light' | 'dark'
 
 export const FONT_SIZE_MAP: Record<FontSize, string> = {
@@ -38,6 +40,12 @@ export const FONT_SIZE_MAP: Record<FontSize, string> = {
   md: 'text-base',
   lg: 'text-lg',
   xl: 'text-xl',
+}
+
+export const LINE_HEIGHT_MAP: Record<LineHeight, string> = {
+  compact: 'leading-normal',
+  normal: 'leading-relaxed',
+  relaxed: 'leading-loose',
 }
 
 // ========== 语音引擎抽象 ==========

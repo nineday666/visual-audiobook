@@ -73,17 +73,18 @@ export async function getProgress(bookId: string): Promise<ReadingProgress | und
 
 // ========== 设置操作 ==========
 export async function getSettings(): Promise<AppSettings> {
-  let settings = await db.settings.get('singleton')
-  if (!settings) {
-    settings = {
-      speechRate: 1.0,
-      speechPitch: 1.0,
-      preferredVoiceURI: '',
-      fontSize: 'md',
-      theme: 'light',
-    }
-    await db.settings.put({ ...settings, id: 'singleton' } as AppSettings & { id: string })
+  const existing = await db.settings.get('singleton')
+  if (existing) return existing as unknown as AppSettings
+
+  const settings: AppSettings = {
+    speechRate: 1.0,
+    speechPitch: 1.0,
+    preferredVoiceURI: '',
+    fontSize: 'md',
+    lineHeight: 'normal',
+    theme: 'light',
   }
+  await db.settings.put({ ...settings, id: 'singleton' } as AppSettings & { id: string })
   return settings
 }
 

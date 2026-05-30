@@ -9,6 +9,7 @@ import { hasProxyUrl, setProxyUrl } from '../services/edge-tts'
 import type { Book, ContextMenuState } from '../types'
 import {
   FONT_SIZE_MAP,
+  LINE_HEIGHT_MAP,
   CHARS_PER_SECOND,
   estimateTotalSeconds,
   estimateElapsedSeconds,
@@ -38,7 +39,8 @@ export default function Reader() {
   const [showProxyInput, setShowProxyInput] = useState(false)
   const [proxyUrlInput, setProxyUrlInput] = useState('')
   const [forceLocal, setForceLocal] = useState(false)
-  const [userScrolled, setUserScrolled] = useState(false) // 用户手动滚动后停止自动跟随
+  const [userScrolled, setUserScrolled] = useState(false)
+  const [showSettings, setShowSettings] = useState(false) // 用户手动滚动后停止自动跟随
 
   // === 精细 selector ===
   const currentParaIndex = useReaderStore((s) => s.currentParaIndex)
@@ -48,6 +50,9 @@ export default function Reader() {
   const speechRate = useReaderStore((s) => s.speechRate)
 
   const fontSize = useSettingsStore((s) => s.fontSize)
+  const lineHeight = useSettingsStore((s) => s.lineHeight)
+  const setLineHeight = useSettingsStore((s) => s.setLineHeight)
+  const setFontSize = useSettingsStore((s) => s.setFontSize)
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode } = useSpeech()
   useMediaSession()
 
@@ -272,13 +277,61 @@ export default function Reader() {
           {!forceLocal && hasProxyUrl() ? '☁️' : '🔊'}
         </button>
 
-        <button
-          onClick={() => navigate('/')}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm flex-shrink-0"
-          aria-label="设置"
-        >
-          ⚙
-        </button>
+        {/* 设置 */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm"
+            aria-label="设置"
+          >
+            ⚙
+          </button>
+          {showSettings && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowSettings(false)} />
+              <div className="absolute right-0 top-10 z-40 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-3">
+                {/* 字体大小 */}
+                <div className="mb-3">
+                  <p className="text-xs text-slate-500 mb-1.5">字体大小</p>
+                  <div className="flex gap-1">
+                    {(['sm', 'md', 'lg', 'xl'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setFontSize(s)}
+                        className={`flex-1 text-xs py-1 rounded-md transition-colors ${
+                          fontSize === s
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                        }`}
+                      >
+                        {s === 'sm' ? '小' : s === 'md' ? '中' : s === 'lg' ? '大' : '特大'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* 行距 */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-1.5">行距</p>
+                  <div className="flex gap-1">
+                    {(['compact', 'normal', 'relaxed'] as const).map((lh) => (
+                      <button
+                        key={lh}
+                        onClick={() => setLineHeight(lh)}
+                        className={`flex-1 text-xs py-1 rounded-md transition-colors ${
+                          lineHeight === lh
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                        }`}
+                      >
+                        {lh === 'compact' ? '紧' : lh === 'normal' ? '常' : '松'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </header>
 
       {/* 代理 URL 设置 */}
@@ -321,7 +374,7 @@ export default function Reader() {
         onScroll={handleUserScroll}
         onTouchMove={handleUserScroll}
       >
-        <div className={FONT_SIZE_MAP[fontSize]}>
+        <div className={`${FONT_SIZE_MAP[fontSize]} ${LINE_HEIGHT_MAP[lineHeight]}`}>
           {book.paragraphs.map((para, i) => (
             <Paragraph
               key={i}

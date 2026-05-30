@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, FontSize, Theme } from '../types'
+import type { AppSettings, FontSize, LineHeight, Theme } from '../types'
 import { getSettings, saveSettings } from '../services/db'
 
 interface SettingsStore extends AppSettings {
@@ -9,6 +9,7 @@ interface SettingsStore extends AppSettings {
   setSpeechPitch: (pitch: number) => void
   setPreferredVoice: (uri: string) => void
   setFontSize: (size: FontSize) => void
+  setLineHeight: (lh: LineHeight) => void
   setTheme: (theme: Theme) => void
 }
 
@@ -18,6 +19,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   speechPitch: 1.0,
   preferredVoiceURI: '',
   fontSize: 'md',
+  lineHeight: 'normal',
   theme: 'light',
 
   load: async () => {
@@ -44,6 +46,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setFontSize: (size: FontSize) => {
     set({ fontSize: size })
     saveSettings({ fontSize: size })
+  },
+
+  setLineHeight: (lh: LineHeight) => {
+    set({ lineHeight: lh })
+    saveSettings({ lineHeight: lh })
   },
 
   setTheme: (theme: Theme) => {
