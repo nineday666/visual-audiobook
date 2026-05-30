@@ -1,22 +1,30 @@
 import { useEffect, useRef, useCallback } from 'react'
-import { getSpeechEngine } from '../services/speech-engine'
 import { useReaderStore } from '../stores/readerStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { getEdgeTts } from '../services/edge-tts'
+import { AudioPlayer } from '../services/audio-player'
+import { getSpeechEngine } from '../services/speech-engine'
 import { CHARS_PER_SECOND } from '../types'
 
 export function useSpeech() {
-  const engine = useRef(getSpeechEngine()).current
-
-  // === 用 ref 保存最新值，避免引擎回调中的闭包延迟 ===
+  // Refs for current state (avoids stale closures)
   const paragraphsRef = useRef<string[]>([])
   const currentIndexRef = useRef(0)
   const rateRef = useRef(1.0)
-  const pitchRef = useRef(1.0)
   const voiceRef = useRef('')
   const isPlayingRef = useRef(false)
+
+  // Audio-based pipeline
+  const playerRef = useRef<AudioPlayer | null>(null)
+  const ttsRef = useRef(getEdgeTts())
+  const useCloudRef = useRef(true) // 尝试云 TTS；失败则降级
+  const prefetchingRef = useRef(new Set<number>())
+
+  // Web Speech fallback
+  const engineRef = useRef(getSpeechEngine())
   const paragraphStartRef = useRef(0)
 
-  // 同步 Zustand → refs
+  // Zustand selectors
   const paragraphs = useReaderStore((s) => s.paragraphs)
   const currentParaIndex = useReaderStore((s) => s.currentParaIndex)
   const speechRate = useReaderStore((s) => s.speechRate)
@@ -30,127 +38,217 @@ export function useSpeech() {
   const play = useReaderStore((s) => s.play)
   const settingsRate = useSettingsStore((s) => s.speechRate)
 
+  // Sync to refs
   paragraphsRef.current = paragraphs
   currentIndexRef.current = currentParaIndex
   rateRef.current = speechRate || settingsRate || 1.0
-  pitchRef.current = speechPitch
   voiceRef.current = selectedVoiceURI
   isPlayingRef.current = isPlaying
 
-  // === 直接播放指定段落 ===
-  // skipCancel=true: 段落间连续播放，不 cancel（Android 上避免卡顿）
-  const speakIndex = useCallback((index: number, skipCancel = false) => {
-    const paras = paragraphsRef.current
-    if (index >= paras.length) {
-      engine.stop()
-      stop()
+  // === Cloud TTS + AudioPlayer pipeline ===
+  const initPlayer = useCallback(() => {
+    if (playerRef.current) return playerRef.current
+    const player = new AudioPlayer()
+    playerRef.current = player
+
+    player.setCallbacks({
+      onStart: (index) => {
+        setCurrentParagraph(index)
+      },
+      onEnd: (index) => {
+        // 预取下一个
+        prefetchNext(index + 1)
+      },
+      onProgress: (index, charOffset) => {
+        if (index === currentIndexRef.current) {
+          setCurrentCharOffset(charOffset)
+        }
+      },
+      onError: () => {
+        // 云 TTS 失败 → 降级到 Web Speech
+        useCloudRef.current = false
+      },
+    })
+
+    return player
+  }, [setCurrentParagraph, setCurrentCharOffset])
+
+  // 预取段落音频
+  const prefetchAudio = useCallback(async (index: number) => {
+    if (index < 0 || index >= paragraphsRef.current.length) return
+    if (prefetchingRef.current.has(index)) return
+    prefetchingRef.current.add(index)
+
+    const text = paragraphsRef.current[index]
+    if (!text?.trim()) {
+      prefetchingRef.current.delete(index)
       return
     }
-    const text = paras[index]
-    if (!text?.trim()) {
-      currentIndexRef.current = index + 1
-      setCurrentParagraph(index + 1)
-      speakIndex(index + 1, skipCancel)
-      return
+
+    try {
+      const tts = ttsRef.current
+      const result = await tts.synthesize(text)
+      const player = playerRef.current
+      if (player) {
+        player.setParaCharLength(index, text.length)
+        await player.preload(index, result.audioBuffer)
+      }
+    } catch {
+      // 云 TTS 失败
+      useCloudRef.current = false
+    } finally {
+      prefetchingRef.current.delete(index)
+    }
+  }, [])
+
+  // 预取后续段落
+  const prefetchNext = useCallback((fromIndex: number) => {
+    for (let i = fromIndex; i < fromIndex + 3 && i < paragraphsRef.current.length; i++) {
+      prefetchAudio(i)
+    }
+  }, [prefetchAudio])
+
+  // 云 TTS 启动播放
+  const startCloudPlayback = useCallback(async (index: number) => {
+    useCloudRef.current = true
+    const player = initPlayer()
+    player.clearQueue()
+
+    // 连接 TTS
+    try {
+      await ttsRef.current.connect()
+    } catch {
+      useCloudRef.current = false
+      return false
     }
 
     currentIndexRef.current = index
+    player.setRate(rateRef.current)
+
+    // 预取当前及后续段落
+    prefetchNext(index)
+    player.play(index)
+
+    return true
+  }, [initPlayer, prefetchNext])
+
+  // === Web Speech fallback (当前逻辑，精简版) ===
+  const speakFallback = useCallback((index: number) => {
+    const text = paragraphsRef.current[index]
+    if (!text?.trim()) {
+      currentIndexRef.current = index + 1
+      setCurrentParagraph(index + 1)
+      speakFallback(index + 1)
+      return
+    }
     paragraphStartRef.current = Date.now()
     setCurrentParagraph(index)
-    setCurrentCharOffset(0)
 
-    engine.speak(text, {
+    engineRef.current.speak(text, {
       rate: rateRef.current,
-      pitch: pitchRef.current,
+      pitch: speechPitch,
       voiceURI: voiceRef.current || undefined,
-    }, skipCancel)
-  }, [engine, stop, setCurrentParagraph, setCurrentCharOffset])
-
-  // === 引擎事件：在回调里直接用 ref 推进到下一段，不等 React ===
-  useEffect(() => {
-    engine.onBoundary((e) => {
-      setCurrentCharOffset(e.charIndex)
     })
+  }, [speechPitch, setCurrentParagraph])
 
+  // Web Speech 事件
+  useEffect(() => {
+    const engine = engineRef.current
+    engine.onBoundary((e) => setCurrentCharOffset(e.charIndex))
     engine.onEnd(() => {
-      // 段落间连续播放，skipCancel=true 避免 cancel 延迟
       const next = currentIndexRef.current + 1
       if (next < paragraphsRef.current.length) {
-        speakIndex(next, true)
+        currentIndexRef.current = next
+        speakFallback(next)
       } else {
-        engine.stop()
         stop()
       }
     })
+    engine.onError(() => pause())
+    return () => { engine.stop() }
+  }, [speakFallback, setCurrentCharOffset, stop, pause])
 
-    engine.onError((e) => {
-      console.error('Speech error:', e)
-      pause()
-    })
+  // === 公开 API ===
+  const startPlayback = useCallback(async (paraIndex?: number) => {
+    const idx = paraIndex ?? currentIndexRef.current
 
-    return () => {
-      engine.stop()
+    // 尝试云 TTS
+    if (useCloudRef.current) {
+      const ok = await startCloudPlayback(idx)
+      if (ok) {
+        play()
+        return
+      }
     }
-  }, [engine, speakIndex, setCurrentCharOffset, stop, pause])
 
-  // === 播放/暂停控制 ===
-  const startPlayback = useCallback((paraIndex?: number) => {
-    if (paraIndex !== undefined) {
-      currentIndexRef.current = paraIndex
-    }
+    // 降级到 Web Speech
+    currentIndexRef.current = idx
     play()
-    speakIndex(paraIndex ?? currentIndexRef.current)
-  }, [play, speakIndex])
+    speakFallback(idx)
+  }, [startCloudPlayback, play, speakFallback])
 
   const pausePlayback = useCallback(() => {
-    engine.pause()
+    if (useCloudRef.current && playerRef.current) {
+      playerRef.current.pause()
+    } else {
+      engineRef.current.pause()
+    }
     pause()
-  }, [engine, pause])
+  }, [pause])
 
   const resumePlayback = useCallback(() => {
-    engine.resume()
+    if (useCloudRef.current && playerRef.current) {
+      playerRef.current.resume()
+    } else {
+      engineRef.current.resume()
+    }
     play()
-  }, [engine, play])
+  }, [play])
 
   const stopPlayback = useCallback(() => {
-    engine.stop()
+    if (useCloudRef.current && playerRef.current) {
+      playerRef.current.stop()
+    } else {
+      engineRef.current.stop()
+    }
     stop()
-  }, [engine, stop])
+  }, [stop])
 
-  // === 倍速/音色变化时立即重新朗读 ===
+  // 倍速变化 → 实时更新 playbackRate
   useEffect(() => {
-    if (!isPlayingRef.current) return
-    const idx = currentIndexRef.current
-    const text = paragraphsRef.current[idx]
-    if (!text?.trim()) return
-    speakIndex(idx)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [speechRate, selectedVoiceURI])
+    if (playerRef.current) {
+      playerRef.current.setRate(rateRef.current)
+    }
+  }, [speechRate])
 
-  // === 定时器：模拟进度（移动端无 onboundary 时的兜底） ===
+  // 清理
   useEffect(() => {
-    if (!isPlaying) return
+    return () => {
+      playerRef.current?.destroy()
+      ttsRef.current.disconnect()
+    }
+  }, [])
 
+  // === Web Speech 进度定时器（仅兜底用） ===
+  useEffect(() => {
+    if (!isPlaying || useCloudRef.current) return
     const timer = setInterval(() => {
       if (!useReaderStore.getState().isPlaying) return
-
       const elapsed = (Date.now() - paragraphStartRef.current) / 1000
       const estimatedChars = Math.floor(elapsed * CHARS_PER_SECOND * rateRef.current)
       const idx = currentIndexRef.current
       const currentText = paragraphsRef.current[idx] || ''
       const maxOffset = Math.max(0, currentText.length - 1)
-
       const store = useReaderStore.getState()
       if (estimatedChars > store.currentCharOffset) {
         setCurrentCharOffset(Math.min(estimatedChars, maxOffset))
       }
     }, 200)
-
     return () => clearInterval(timer)
   }, [isPlaying, setCurrentCharOffset])
 
   return {
-    isSpeaking: engine.isSpeaking(),
+    isSpeaking: isPlaying,
     startPlayback,
     pausePlayback,
     resumePlayback,
