@@ -70,13 +70,16 @@ export function useSpeech() {
   voiceRef.current = selectedVoiceURI
   isPlayingRef.current = isPlaying
 
-  // === 本地模式：批次合成（一个大 utterance 包含多段，几乎零间隔） ===
+  // === 本地模式：批次合成 + 预排队，消除批次间隔 ===
   const speakBatch = useCallback((fromIndex: number) => {
     const batch = buildBatch(paragraphsRef.current, fromIndex)
     if (!batch) return
 
-    batchOffsetsRef.current = batch.paraOffsets
-    batchStartRef.current = batch.startIndex
+    // 只有第一个批次更新偏移引用；后续批次在 onboundary 里切换
+    if (fromIndex === currentIndexRef.current || batchStartRef.current === 0) {
+      batchOffsetsRef.current = batch.paraOffsets
+      batchStartRef.current = batch.startIndex
+    }
 
     const utter = new SpeechSynthesisUtterance(batch.text)
     utter.rate = rateRef.current
@@ -90,7 +93,6 @@ export function useSpeech() {
     }
 
     utter.onboundary = (e) => {
-      // 根据 charIndex 在批次偏移中查找当前段落
       const offs = batchOffsetsRef.current
       let paraInBatch = 0
       for (let i = offs.length - 1; i >= 0; i--) {
@@ -101,34 +103,67 @@ export function useSpeech() {
         useReaderStore.getState().setCurrentParagraph(globalIndex)
         paraStartRef.current = Date.now()
       }
-      // 段内偏移
       const paraStart = offs[paraInBatch] ?? 0
-      const charOff = e.charIndex - paraStart
-      setCurrentCharOffset(charOff)
+      setCurrentCharOffset(e.charIndex - paraStart)
     }
 
     utter.onstart = () => {
-      paraStartRef.current = Date.now()
-      setCurrentParagraph(fromIndex)
-      setCurrentCharOffset(0)
-    }
-
-    utter.onend = () => {
-      // 播下一个批次
-      const nextFrom = fromIndex + BATCH_SIZE
-      if (nextFrom < paragraphsRef.current.length && isPlayingRef.current) {
-        speakBatch(nextFrom)
-      } else {
-        stopAction()
+      if (fromIndex === currentIndexRef.current) {
+        paraStartRef.current = Date.now()
       }
     }
 
-    utter.onerror = () => {
-      if (isPlayingRef.current) speakBatch(fromIndex + BATCH_SIZE)
+    // 不再在 onend 里播下一批——下面直接预排队
+    let isLastBatch = false
+    utter.onend = () => {
+      if (isLastBatch) stopAction()
     }
 
+    utter.onerror = () => {}
+
     speechSynthesis.speak(utter)
-  }, [speechPitch, setCurrentParagraph, setCurrentCharOffset, stopAction])
+
+    // 立即排队下一批次（浏览器 speech queue 自动衔接，零间隔）
+    const nextFrom = batch.startIndex + BATCH_SIZE
+    if (nextFrom < paragraphsRef.current.length) {
+      // 下一批次用新的批次偏移
+      const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
+      if (nextBatch) {
+        const nextUtter = new SpeechSynthesisUtterance(nextBatch.text)
+        nextUtter.rate = rateRef.current
+        nextUtter.pitch = speechPitch
+        nextUtter.lang = 'zh-CN'
+        nextUtter.volume = 1
+        if (voiceRef.current) {
+          const voices = speechSynthesis.getVoices()
+          const v = voices.find((vv) => vv.voiceURI === voiceRef.current)
+          if (v) nextUtter.voice = v
+        }
+        nextUtter.onboundary = (e) => {
+          const offs = nextBatch.paraOffsets
+          let paraInBatch = 0
+          for (let i = offs.length - 1; i >= 0; i--) {
+            if (e.charIndex >= offs[i]) { paraInBatch = i; break }
+          }
+          const globalIndex = nextBatch.startIndex + paraInBatch
+          if (globalIndex !== currentIndexRef.current) {
+            useReaderStore.getState().setCurrentParagraph(globalIndex)
+            paraStartRef.current = Date.now()
+          }
+          const paraStart = offs[paraInBatch] ?? 0
+          setCurrentCharOffset(e.charIndex - paraStart)
+        }
+        const thirdFrom = nextFrom + BATCH_SIZE
+        if (thirdFrom >= paragraphsRef.current.length) isLastBatch = true
+        nextUtter.onend = () => {
+          if (thirdFrom >= paragraphsRef.current.length) stopAction()
+        }
+        speechSynthesis.speak(nextUtter)
+      }
+    } else {
+      isLastBatch = true
+    }
+  }, [speechPitch, setCurrentCharOffset, stopAction])
 
   // === 云端模式 ===
   const initPlayer = useCallback((): AudioPlayer => {
