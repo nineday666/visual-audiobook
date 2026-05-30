@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useReaderStore } from '../stores/readerStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getEdgeTts } from '../services/edge-tts'
@@ -19,6 +19,7 @@ export function useSpeech() {
   const ttsRef = useRef(getEdgeTts())
   const useCloudRef = useRef(true) // 尝试云 TTS；失败则降级
   const prefetchingRef = useRef(new Set<number>())
+  const [ttsStatus, setTtsStatus] = useState<'idle' | 'connecting' | 'cloud' | 'fallback'>('idle')
 
   // Web Speech fallback
   const engineRef = useRef(getSpeechEngine())
@@ -92,10 +93,15 @@ export function useSpeech() {
       if (player) {
         player.setParaCharLength(index, text.length)
         await player.preload(index, result.audioBuffer)
+        if (ttsStatus !== 'cloud') {
+          setTtsStatus('cloud')
+          console.log('✅ 云端 TTS 已就绪 — 使用 Microsoft Edge 神经网络语音')
+        }
       }
-    } catch {
-      // 云 TTS 失败
+    } catch (err) {
+      console.warn('⚠️ 云 TTS 失败，降级到离线语音:', err)
       useCloudRef.current = false
+      setTtsStatus('fallback')
     } finally {
       prefetchingRef.current.delete(index)
     }
@@ -111,6 +117,7 @@ export function useSpeech() {
   // 云 TTS 启动播放
   const startCloudPlayback = useCallback(async (index: number) => {
     useCloudRef.current = true
+    setTtsStatus('connecting')
     const player = initPlayer()
     player.clearQueue()
 
@@ -249,6 +256,7 @@ export function useSpeech() {
 
   return {
     isSpeaking: isPlaying,
+    ttsStatus: ttsStatus,
     startPlayback,
     pausePlayback,
     resumePlayback,
