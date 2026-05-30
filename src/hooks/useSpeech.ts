@@ -41,8 +41,6 @@ export function useSpeech() {
   const voiceRef = useRef('')
   const isPlayingRef = useRef(false)
   const paraStartRef = useRef(0)
-  const globalStartTimeRef = useRef(0) // 批次开始播放的绝对时间
-  const globalStartOffsetRef = useRef(0) // 批次开始时已读到的累计字符偏移
 
   // Cloud
   const playerRef = useRef<AudioPlayer | null>(null)
@@ -69,7 +67,7 @@ export function useSpeech() {
   voiceRef.current = selectedVoiceURI
   isPlayingRef.current = isPlaying
 
-  // 创建单个批次的 utterance
+  // 创建单个批次的 utterance（自带计时器模拟 onboundary，手机端兜底）
   const makeBatchUtter = useCallback((fromIndex: number) => {
     const batch = buildBatch(paragraphsRef.current, fromIndex)
     if (!batch) return null
@@ -85,28 +83,42 @@ export function useSpeech() {
       if (v) utter.voice = v
     }
 
-    utter.onboundary = (e) => {
-      const offs = batch.paraOffsets
+    let localTimer: ReturnType<typeof setInterval> | null = null
+    const startTime = Date.now()
+    const offsets = batch.paraOffsets
+    const batchStart = batch.startIndex
+
+    const updatePosition = (charIndex?: number) => {
+      const ci = charIndex ?? Math.floor((Date.now() - startTime) / 1000 * CHARS_PER_SECOND * rateRef.current)
       let paraInBatch = 0
-      for (let i = offs.length - 1; i >= 0; i--) {
-        if (e.charIndex >= offs[i]) { paraInBatch = i; break }
+      for (let i = offsets.length - 1; i >= 0; i--) {
+        if (ci >= offsets[i]) { paraInBatch = i; break }
       }
-      const globalIndex = batch.startIndex + paraInBatch
-      if (globalIndex !== currentIndexRef.current) {
-        useReaderStore.getState().setCurrentParagraph(globalIndex)
-        paraStartRef.current = Date.now()
+      const globalIdx = batchStart + paraInBatch
+      if (globalIdx >= paragraphsRef.current.length) return
+      if (globalIdx !== currentIndexRef.current) {
+        useReaderStore.getState().setCurrentParagraph(globalIdx)
       }
-      const paraStart = offs[paraInBatch] ?? 0
-      setCurrentCharOffset(e.charIndex - paraStart)
+      const paraStart = offsets[paraInBatch] ?? 0
+      const off = Math.max(0, ci - paraStart)
+      const maxOff = Math.max(0, (paragraphsRef.current[globalIdx] || '').length - 1)
+      const store = useReaderStore.getState()
+      if (off > store.currentCharOffset) {
+        setCurrentCharOffset(Math.min(off, maxOff))
+      }
     }
+
+    utter.onboundary = (e) => updatePosition(e.charIndex)
 
     utter.onstart = () => {
-      if (fromIndex === currentIndexRef.current) paraStartRef.current = Date.now()
+      updatePosition(0)
+      // 启动 utterance 内部计时器（200ms 间隔）
+      localTimer = setInterval(() => updatePosition(), 200)
     }
 
-    // onend 里补充队列，保证总有下一批在等待
     utter.onend = () => {
-      const nextFrom = fromIndex + BATCH_SIZE
+      if (localTimer) clearInterval(localTimer)
+      const nextFrom = batchStart + BATCH_SIZE
       const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
       if (nextBatch && isPlayingRef.current) {
         const nextU = makeBatchUtter(nextFrom)
@@ -114,6 +126,10 @@ export function useSpeech() {
       } else {
         stopAction()
       }
+    }
+
+    utter.onerror = () => {
+      if (localTimer) clearInterval(localTimer)
     }
 
     return utter
@@ -181,9 +197,6 @@ export function useSpeech() {
     } else {
       setMode('local')
       speechSynthesis.cancel()
-      const offsets = useReaderStore.getState().cumulativeCharOffsets
-      globalStartTimeRef.current = Date.now()
-      globalStartOffsetRef.current = offsets[idx] ?? 0
       speakBatch(idx)
       playAction()
     }
@@ -214,46 +227,10 @@ export function useSpeech() {
       playerRef.current.setRate(rateRef.current)
     } else {
       const idx = currentIndexRef.current
-      const offsets = useReaderStore.getState().cumulativeCharOffsets
-      globalStartTimeRef.current = Date.now()
-      globalStartOffsetRef.current = offsets[idx] ?? 0
       speechSynthesis.cancel()
       speakBatch(idx)
     }
   }, [speechRate, mode, speakBatch])
-
-  // 进度定时器（手机端 onboundary 不可靠，用全局字符偏移估算段落位置）
-  useEffect(() => {
-    if (!isPlaying || mode === 'cloud') return
-    const timer = setInterval(() => {
-      if (!useReaderStore.getState().isPlaying) return
-      const elapsed = (Date.now() - globalStartTimeRef.current) / 1000
-      const globalOffset = globalStartOffsetRef.current + elapsed * CHARS_PER_SECOND * rateRef.current
-      const offsets = useReaderStore.getState().cumulativeCharOffsets
-      const paras = paragraphsRef.current
-
-      // 找到当前全局字符位置对应的段落
-      let newPara = currentIndexRef.current
-      for (let i = offsets.length - 1; i >= 0; i--) {
-        if (offsets[i] <= globalOffset) { newPara = i; break }
-      }
-      if (newPara < 0) newPara = 0
-      if (newPara >= paras.length) newPara = paras.length - 1
-
-      const paraStart = offsets[newPara] ?? 0
-      const charOff = Math.max(0, Math.floor(globalOffset - paraStart))
-      const maxOff = Math.max(0, (paras[newPara] || '').length - 1)
-
-      const store = useReaderStore.getState()
-      if (newPara !== store.currentParaIndex) {
-        setCurrentParagraph(newPara)
-      }
-      if (charOff > store.currentCharOffset) {
-        setCurrentCharOffset(Math.min(charOff, maxOff))
-      }
-    }, 200)
-    return () => clearInterval(timer)
-  }, [isPlaying, mode, setCurrentParagraph, setCurrentCharOffset])
 
   useEffect(() => () => { playerRef.current?.destroy() }, [])
 
