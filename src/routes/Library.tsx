@@ -13,9 +13,10 @@ export default function Library() {
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [dropTarget, setDropTarget] = useState<number | null>(null)
+  const [dropTarget, setDropTarget] = useState<number | null>(null) // 仅用于 UI 高亮
   const navigate = useNavigate()
-  const dragItemRef = useRef<number | null>(null)
+  const dragFromRef = useRef<number | null>(null)
+  const dropTargetRef = useRef<number | null>(null) // 实时值，dragEnd 直接用
 
   const refreshBooks = useCallback(async () => {
     const all = await getAllBooks()
@@ -56,11 +57,11 @@ export default function Library() {
 
   // === 拖拽排序 ===
   const handleDragStart = (e: React.DragEvent, index: number) => {
-    dragItemRef.current = index
+    dragFromRef.current = index
+    dropTargetRef.current = null
     setDragIndex(index)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', '')
-    // 拖拽时半透明
     const el = e.currentTarget as HTMLElement
     setTimeout(() => { el.style.opacity = '0.4' }, 0)
   }
@@ -68,10 +69,12 @@ export default function Library() {
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDropTarget(index)
+    dropTargetRef.current = index // ref 即时更新
+    setDropTarget(index) // state 用于 UI 高亮
   }
 
   const handleDragLeave = () => {
+    dropTargetRef.current = null
     setDropTarget(null)
   }
 
@@ -80,22 +83,20 @@ export default function Library() {
     setDragIndex(null)
     setDropTarget(null)
 
-    const from = dragItemRef.current
-    if (from === null) return
+    const from = dragFromRef.current
+    const to = dropTargetRef.current // 用 ref 而不是 state
+    dragFromRef.current = null
+    dropTargetRef.current = null
 
-    const to = dropTarget
-    if (to !== null && to !== from) {
-      const reordered = [...books]
-      const [moved] = reordered.splice(from, 1)
-      reordered.splice(to, 0, moved)
-      setBooks(reordered)
+    if (from === null || to === null || to === from) return
 
-      // 持久化排序
-      const orders = reordered.map((b, i) => ({ id: b.id, sortOrder: i }))
-      updateBookOrders(orders)
-    }
+    const reordered = [...books]
+    const [moved] = reordered.splice(from, 1)
+    reordered.splice(to, 0, moved)
+    setBooks(reordered)
 
-    dragItemRef.current = null
+    const orders = reordered.map((b, i) => ({ id: b.id, sortOrder: i }))
+    updateBookOrders(orders)
   }
 
   const handleDrop = (e: React.DragEvent) => {
