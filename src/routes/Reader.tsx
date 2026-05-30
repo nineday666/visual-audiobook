@@ -5,6 +5,7 @@ import { useReaderStore } from '../stores/readerStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSpeech } from '../hooks/useSpeech'
 import { useMediaSession } from '../hooks/useMediaSession'
+import { hasProxyUrl, setProxyUrl } from '../services/edge-tts'
 import type { Book, ContextMenuState } from '../types'
 import {
   FONT_SIZE_MAP,
@@ -34,6 +35,9 @@ export default function Reader() {
     visible: false, x: 0, y: 0, paraIndex: 0,
   })
   const [timeInput, setTimeInput] = useState('')
+  const [showProxyInput, setShowProxyInput] = useState(false)
+  const [proxyUrlInput, setProxyUrlInput] = useState('')
+  const [forceLocal, setForceLocal] = useState(false)
 
   // === 精细 selector ===
   const currentParaIndex = useReaderStore((s) => s.currentParaIndex)
@@ -217,7 +221,7 @@ export default function Reader() {
         <div className="flex-1 min-w-0">
           <h2 className="font-medium text-sm truncate flex items-center gap-2">
             {book.title}
-            {ttsMode === 'cloud' && (
+            {!forceLocal && ttsMode === 'cloud' && (
               <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 rounded-full flex-shrink-0">云端</span>
             )}
           </h2>
@@ -225,6 +229,33 @@ export default function Reader() {
             {formatTime(currentSeconds)} / {formatTime(totalSeconds)} · {currentParaIndex + 1}/{book.paragraphs.length}段
           </p>
         </div>
+
+        {/* 云端/离线切换 */}
+        <button
+          onClick={() => {
+            if (forceLocal) {
+              // 当前是强制离线 → 检查是否有代理URL
+              if (hasProxyUrl()) {
+                setForceLocal(false)
+              } else {
+                setShowProxyInput(!showProxyInput)
+              }
+            } else {
+              // 当前允许云端 → 改为离线（移除代理URL使useSpeech生效）
+              localStorage.removeItem('tts_proxy_url')
+              setForceLocal(true)
+            }
+          }}
+          className={`text-[10px] px-2 py-1 rounded-full flex-shrink-0 transition-colors ${
+            !forceLocal && hasProxyUrl()
+              ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+          }`}
+          title={forceLocal ? '切换到云端 TTS' : '切换到离线语音'}
+        >
+          {!forceLocal && hasProxyUrl() ? '☁️' : '🔊'}
+        </button>
+
         <button
           onClick={() => navigate('/')}
           className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm flex-shrink-0"
@@ -233,6 +264,39 @@ export default function Reader() {
           ⚙
         </button>
       </header>
+
+      {/* 代理 URL 设置 */}
+      {showProxyInput && (
+        <div className="px-4 py-2 bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-800">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="粘贴 Deno/Cloudflare Worker URL"
+              value={proxyUrlInput}
+              onChange={(e) => setProxyUrlInput(e.target.value)}
+              className="flex-1 text-xs px-2 py-1.5 border border-blue-300 dark:border-blue-700 rounded bg-white dark:bg-slate-900 outline-none"
+            />
+            <button
+              onClick={() => {
+                if (proxyUrlInput.trim()) {
+                  setProxyUrl(proxyUrlInput.trim())
+                  setForceLocal(false)
+                  setShowProxyInput(false)
+                }
+              }}
+              className="text-xs px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 flex-shrink-0"
+            >
+              连接云端
+            </button>
+            <button
+              onClick={() => setShowProxyInput(false)}
+              className="text-xs px-2 py-1.5 text-slate-400 hover:text-slate-600 flex-shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 文本区域 */}
       <div

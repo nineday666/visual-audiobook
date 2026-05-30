@@ -1,6 +1,8 @@
 // Cloudflare Worker — Edge TTS 代理
 // 接收 text，返回 MP3 音频
-// 部署：Cloudflare Dashboard → Workers & Pages → Create → 粘贴此代码
+
+// 注意：如果 WebSocket 报错，改用 Deno Deploy 方案
+// Cloudflare Workers 需要 compatibility_date >= 2024-01-01
 
 export default {
   async fetch(request) {
@@ -23,9 +25,21 @@ export default {
       const { text } = await request.json()
       if (!text) return new Response('Missing text', { status: 400 })
 
-      const audio = await synthesizeEdgeTts(text)
+      // 长文本分块：每块 ≤ 500 字符，避免 TTS 单次请求过长
+      const chunks = splitText(text, 500)
+      const audioParts = []
+      for (const chunk of chunks) {
+        const audio = await synthesizeEdgeTts(chunk)
+        audioParts.push(new Uint8Array(audio))
+      }
 
-      return new Response(audio, {
+      // 合并所有音频块
+      const totalLen = audioParts.reduce((s, a) => s + a.length, 0)
+      const merged = new Uint8Array(totalLen)
+      let offset = 0
+      for (const part of audioParts) { merged.set(part, offset); offset += part.length }
+
+      return new Response(merged.buffer, {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Access-Control-Allow-Origin': '*',

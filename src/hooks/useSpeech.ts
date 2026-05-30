@@ -90,22 +90,33 @@ export function useSpeech() {
     return p
   }, [setCurrentParagraph, setCurrentCharOffset])
 
+  // 缓存：已获取的音频 buffer（避免重复请求）
+  const audioCacheRef = useRef(new Map<number, ArrayBuffer>())
+
   const fetchAndBuffer = useCallback(async (index: number) => {
     if (index < 0 || index >= paragraphsRef.current.length) return
     if (fetchingRef.current.has(index)) return
     const text = paragraphsRef.current[index]
     if (!text?.trim()) { fetchingRef.current.add(index); return }
     fetchingRef.current.add(index)
-    try {
-      const buf = await ttsRef.current.synthesize(text)
-      const player = playerRef.current!
-      player.setParaCharLength(index, text.length)
-      await player.preload(index, buf)
-    } catch { /* 忽略 */ }
+
+    // 检查缓存
+    let buf = audioCacheRef.current.get(index)
+    if (!buf) {
+      try {
+        buf = await ttsRef.current.synthesize(text)
+        audioCacheRef.current.set(index, buf)
+      } catch { return }
+    }
+
+    const player = playerRef.current!
+    player.setParaCharLength(index, text.length)
+    await player.preload(index, buf)
   }, [])
 
   const prefetchCloud = useCallback((from: number) => {
-    for (let i = from; i < from + 3 && i < paragraphsRef.current.length; i++) fetchAndBuffer(i)
+    // 预取当前及后续 3 段（从缓存或 TTS）
+    for (let i = from; i < from + 4 && i < paragraphsRef.current.length; i++) fetchAndBuffer(i)
   }, [fetchAndBuffer])
 
   // === 公开 API ===
