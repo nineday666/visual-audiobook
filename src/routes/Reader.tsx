@@ -38,6 +38,7 @@ export default function Reader() {
   const [showProxyInput, setShowProxyInput] = useState(false)
   const [proxyUrlInput, setProxyUrlInput] = useState('')
   const [forceLocal, setForceLocal] = useState(false)
+  const [userScrolled, setUserScrolled] = useState(false) // 用户手动滚动后停止自动跟随
 
   // === 精细 selector ===
   const currentParaIndex = useReaderStore((s) => s.currentParaIndex)
@@ -90,13 +91,28 @@ export default function Reader() {
     }
   }, [id, navigate])
 
-  // 自动滚动到当前段落
+  // 检测用户手动滚动
+  const handleUserScroll = useCallback(() => {
+    if (isPlaying) setUserScrolled(true)
+  }, [isPlaying])
+
+  // 返回当前位置
+  const scrollToCurrent = useCallback(() => {
+    setUserScrolled(false)
+    const ref = paraRefs.current.get(currentParaIndex)
+    if (ref) {
+      ref.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [currentParaIndex])
+
+  // 自动滚动（用户未手动滚动时才跟随）
   useEffect(() => {
+    if (userScrolled) return
     const ref = paraRefs.current.get(currentParaIndex)
     if (ref && isPlaying) {
       ref.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }, [currentParaIndex, isPlaying])
+  }, [currentParaIndex, isPlaying, userScrolled])
 
   // === 时间进度计算 ===
   const totalChars = book?.totalChars ?? 0
@@ -302,6 +318,8 @@ export default function Reader() {
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-6"
+        onScroll={handleUserScroll}
+        onTouchMove={handleUserScroll}
       >
         <div className={FONT_SIZE_MAP[fontSize]}>
           {book.paragraphs.map((para, i) => (
@@ -318,6 +336,16 @@ export default function Reader() {
         </div>
 
         <div className="h-32" />
+
+        {/* 浮动返回按钮 */}
+        {userScrolled && (
+          <button
+            onClick={scrollToCurrent}
+            className="fixed bottom-32 right-4 z-30 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-full shadow-lg transition-all animate-bounce"
+          >
+            📍 回到当前
+          </button>
+        )}
       </div>
 
       {/* 底栏 — 播放控制 */}

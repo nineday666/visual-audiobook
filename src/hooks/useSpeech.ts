@@ -5,7 +5,7 @@ import { getEdgeTts, hasProxyUrl } from '../services/edge-tts'
 import { AudioPlayer } from '../services/audio-player'
 import { CHARS_PER_SECOND } from '../types'
 
-const BATCH_SIZE = 8 // 每批次合并的段落数
+const BATCH_SIZE = 50 // 每批次合并的段落数（减少切换次数）
 
 type TtsMode = 'cloud' | 'local'
 
