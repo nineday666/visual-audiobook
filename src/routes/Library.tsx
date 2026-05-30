@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAllBooks, deleteBook } from '../services/db'
+import { getAllBooks, deleteBook, updateBookOrders } from '../services/db'
 import { parseFile } from '../services/parser'
 import { addBook as addBookToDb } from '../services/db'
 import type { Book } from '../types'
@@ -12,7 +12,10 @@ export default function Library() {
   const [books, setBooks] = useState<Book[]>([])
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dropTarget, setDropTarget] = useState<number | null>(null)
   const navigate = useNavigate()
+  const dragItemRef = useRef<number | null>(null)
 
   const refreshBooks = useCallback(async () => {
     const all = await getAllBooks()
@@ -51,14 +54,61 @@ export default function Library() {
     await refreshBooks()
   }
 
+  // === 拖拽排序 ===
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    dragItemRef.current = index
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', '')
+    // 拖拽时半透明
+    const el = e.currentTarget as HTMLElement
+    setTimeout(() => { el.style.opacity = '0.4' }, 0)
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(index)
+  }
+
+  const handleDragLeave = () => {
+    setDropTarget(null)
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    ;(e.currentTarget as HTMLElement).style.opacity = '1'
+    setDragIndex(null)
+    setDropTarget(null)
+
+    const from = dragItemRef.current
+    if (from === null) return
+
+    const to = dropTarget
+    if (to !== null && to !== from) {
+      const reordered = [...books]
+      const [moved] = reordered.splice(from, 1)
+      reordered.splice(to, 0, moved)
+      setBooks(reordered)
+
+      // 持久化排序
+      const orders = reordered.map((b, i) => ({ id: b.id, sortOrder: i }))
+      updateBookOrders(orders)
+    }
+
+    dragItemRef.current = null
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDropTarget(null)
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
-      {/* 顶栏 */}
       <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-950/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 py-4">
         <h1 className="text-xl font-bold text-center">📖 可视化听书</h1>
       </header>
 
-      {/* 导入区域 */}
       <div className="p-4">
         <FileDropZone onImport={handleImport} importing={importing} />
         {importError && (
@@ -66,7 +116,6 @@ export default function Library() {
         )}
       </div>
 
-      {/* 书籍列表 */}
       <main className="flex-1 px-4 pb-4">
         {books.length === 0 ? (
           <div className="text-center text-slate-400 mt-16">
@@ -76,21 +125,34 @@ export default function Library() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
-            {books.map((book) => (
-              <BookCard
+            {books.map((book, i) => (
+              <div
                 key={book.id}
-                book={book}
-                onClick={() => navigate(`/read/${book.id}`)}
-                onDelete={() => handleDelete(book.id)}
-              />
+                draggable
+                onDragStart={(e) => handleDragStart(e, i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDragLeave={handleDragLeave}
+                onDragEnd={handleDragEnd}
+                onDrop={handleDrop}
+                className={`
+                  transition-all duration-200
+                  ${dragIndex === i ? 'opacity-40 scale-95' : ''}
+                  ${dropTarget === i && dropTarget !== dragIndex ? 'translate-y-1' : ''}
+                `}
+              >
+                <BookCard
+                  book={book}
+                  onClick={() => navigate(`/read/${book.id}`)}
+                  onDelete={() => handleDelete(book.id)}
+                />
+              </div>
             ))}
           </div>
         )}
       </main>
 
-      {/* 底栏信息 */}
       <footer className="text-center text-xs text-slate-400 py-4 border-t border-slate-200 dark:border-slate-800">
-        支持 txt / epub 格式 · 离线可用
+        支持 txt / epub 格式 · 长按拖动排序
       </footer>
     </div>
   )

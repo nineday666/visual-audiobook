@@ -30,6 +30,7 @@ export async function parseFile(file: File): Promise<Omit<Book, 'coverColor'>> {
     format,
     paragraphs,
     addedAt: Date.now(),
+    sortOrder: 0,
     totalChars: paragraphs.reduce((sum, p) => sum + p.length, 0),
   }
 }

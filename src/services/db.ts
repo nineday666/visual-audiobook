@@ -8,10 +8,16 @@ class AudiobookDB extends Dexie {
 
   constructor() {
     super('VisualAudiobook')
-    this.version(1).stores({
-      books: 'id, title, addedAt',
+    this.version(2).stores({
+      books: 'id, title, addedAt, sortOrder',
       readingProgress: 'bookId, lastReadAt',
       settings: 'id',
+    }).upgrade(async (tx) => {
+      // 给已有书籍补充 sortOrder
+      const books = await tx.table('books').toArray()
+      for (let i = 0; i < books.length; i++) {
+        await tx.table('books').update(books[i].id, { sortOrder: i })
+      }
     })
   }
 }
@@ -20,16 +26,26 @@ export const db = new AudiobookDB()
 
 // ========== 书籍操作 ==========
 export async function addBook(book: Book): Promise<void> {
+  // 新书排在最前面
+  const count = await db.books.count()
+  book.sortOrder = -count // 负数确保新书排最前
   await db.books.put(book)
 }
 
 export async function getAllBooks(): Promise<Book[]> {
-  const books = await db.books.orderBy('addedAt').reverse().toArray()
-  // 附带进度信息
+  const books = await db.books.orderBy('sortOrder').toArray()
   for (const book of books) {
     book.progress = await db.readingProgress.get(book.id)
   }
   return books
+}
+
+export async function updateBookOrders(orders: { id: string; sortOrder: number }[]): Promise<void> {
+  await db.transaction('rw', db.books, async () => {
+    for (const { id, sortOrder } of orders) {
+      await db.books.update(id, { sortOrder })
+    }
+  })
 }
 
 export async function getBook(id: string): Promise<Book | undefined> {

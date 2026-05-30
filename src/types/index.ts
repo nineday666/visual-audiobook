@@ -7,6 +7,7 @@ export interface Book {
   paragraphs: string[]
   coverColor: string
   addedAt: number
+  sortOrder: number
   totalChars: number
   progress?: ReadingProgress
 }
