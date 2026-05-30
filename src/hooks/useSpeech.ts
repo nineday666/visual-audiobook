@@ -5,7 +5,7 @@ import { getEdgeTts, hasProxyUrl } from '../services/edge-tts'
 import { AudioPlayer } from '../services/audio-player'
 import { CHARS_PER_SECOND } from '../types'
 
-const BATCH_SIZE = 50 // 每批次合并的段落数（减少切换次数）
+const BATCH_SIZE = 20 // 每批次段落数（避免 Android TTS 引擎溢出）
 
 type TtsMode = 'cloud' | 'local'
 
@@ -125,6 +125,20 @@ export function useSpeech() {
     utter.onstart = () => {
       if (activeTimerRef.current) clearInterval(activeTimerRef.current)
       activeTimerRef.current = setInterval(() => {
+        // 检测音频是否意外停止（Android TTS 引擎可能静默挂掉）
+        if (!speechSynthesis.speaking && !speechSynthesis.pending && isPlayingRef.current) {
+          // 音频停了但状态还是"播放中"→ 强制推进下一批次
+          if (activeTimerRef.current) clearInterval(activeTimerRef.current)
+          const nextFrom = batchStart + BATCH_SIZE
+          const nextBatch = buildBatch(paragraphsRef.current, nextFrom)
+          if (nextBatch) {
+            const nextU = makeBatchUtter(nextFrom)
+            if (nextU) speechSynthesis.speak(nextU)
+          } else {
+            stopAction()
+          }
+          return
+        }
         // onboundary 最近 2 秒内触发过 → 让它主导；否则计时器接管
         if (Date.now() - lastBoundaryTime < 2000) return
         const ci = Math.floor((Date.now() - startTime) / 1000 * calibratedCpsRef.current * rateRef.current)
