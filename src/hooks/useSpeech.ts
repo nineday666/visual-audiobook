@@ -41,6 +41,8 @@ export function useSpeech() {
   const voiceRef = useRef('')
   const isPlayingRef = useRef(false)
   const paraStartRef = useRef(0)
+  const globalStartTimeRef = useRef(0) // 批次开始播放的绝对时间
+  const globalStartOffsetRef = useRef(0) // 批次开始时已读到的累计字符偏移
 
   // Cloud
   const playerRef = useRef<AudioPlayer | null>(null)
@@ -179,6 +181,9 @@ export function useSpeech() {
     } else {
       setMode('local')
       speechSynthesis.cancel()
+      const offsets = useReaderStore.getState().cumulativeCharOffsets
+      globalStartTimeRef.current = Date.now()
+      globalStartOffsetRef.current = offsets[idx] ?? 0
       speakBatch(idx)
       playAction()
     }
@@ -209,25 +214,46 @@ export function useSpeech() {
       playerRef.current.setRate(rateRef.current)
     } else {
       const idx = currentIndexRef.current
+      const offsets = useReaderStore.getState().cumulativeCharOffsets
+      globalStartTimeRef.current = Date.now()
+      globalStartOffsetRef.current = offsets[idx] ?? 0
       speechSynthesis.cancel()
       speakBatch(idx)
     }
   }, [speechRate, mode, speakBatch])
 
-  // 进度定时器
+  // 进度定时器（手机端 onboundary 不可靠，用全局字符偏移估算段落位置）
   useEffect(() => {
     if (!isPlaying || mode === 'cloud') return
     const timer = setInterval(() => {
       if (!useReaderStore.getState().isPlaying) return
-      const elapsed = (Date.now() - paraStartRef.current) / 1000
-      const estimatedChars = Math.floor(elapsed * CHARS_PER_SECOND * rateRef.current)
-      const text = paragraphsRef.current[currentIndexRef.current] || ''
-      const maxOffset = Math.max(0, text.length - 1)
+      const elapsed = (Date.now() - globalStartTimeRef.current) / 1000
+      const globalOffset = globalStartOffsetRef.current + elapsed * CHARS_PER_SECOND * rateRef.current
+      const offsets = useReaderStore.getState().cumulativeCharOffsets
+      const paras = paragraphsRef.current
+
+      // 找到当前全局字符位置对应的段落
+      let newPara = currentIndexRef.current
+      for (let i = offsets.length - 1; i >= 0; i--) {
+        if (offsets[i] <= globalOffset) { newPara = i; break }
+      }
+      if (newPara < 0) newPara = 0
+      if (newPara >= paras.length) newPara = paras.length - 1
+
+      const paraStart = offsets[newPara] ?? 0
+      const charOff = Math.max(0, Math.floor(globalOffset - paraStart))
+      const maxOff = Math.max(0, (paras[newPara] || '').length - 1)
+
       const store = useReaderStore.getState()
-      if (estimatedChars > store.currentCharOffset) setCurrentCharOffset(Math.min(estimatedChars, maxOffset))
+      if (newPara !== store.currentParaIndex) {
+        setCurrentParagraph(newPara)
+      }
+      if (charOff > store.currentCharOffset) {
+        setCurrentCharOffset(Math.min(charOff, maxOff))
+      }
     }, 200)
     return () => clearInterval(timer)
-  }, [isPlaying, mode, setCurrentCharOffset])
+  }, [isPlaying, mode, setCurrentParagraph, setCurrentCharOffset])
 
   useEffect(() => () => { playerRef.current?.destroy() }, [])
 
