@@ -87,9 +87,9 @@ export function useSpeech() {
     const startTime = Date.now()
     const offsets = batch.paraOffsets
     const batchStart = batch.startIndex
+    let boundaryFired = false // 如果 onboundary 触发过，就不需要计时器估算
 
-    const updatePosition = (charIndex?: number) => {
-      const ci = charIndex ?? Math.floor((Date.now() - startTime) / 1000 * CHARS_PER_SECOND * rateRef.current)
+    const applyPosition = (ci: number) => {
       let paraInBatch = 0
       for (let i = offsets.length - 1; i >= 0; i--) {
         if (ci >= offsets[i]) { paraInBatch = i; break }
@@ -103,16 +103,26 @@ export function useSpeech() {
       const paraStart = offsets[paraInBatch] ?? 0
       const off = Math.max(0, ci - paraStart)
       const maxOff = Math.max(0, (paragraphsRef.current[globalIdx] || '').length - 1)
-      if (off > store.currentCharOffset + 2) {
+      if (off > store.currentCharOffset) {
         setCurrentCharOffset(Math.min(off, maxOff))
       }
     }
 
+    // onboundary：精确位置（桌面端可用）
+    utter.onboundary = (e) => {
+      boundaryFired = true
+      applyPosition(e.charIndex)
+    }
+
     utter.onstart = () => {
-      updatePosition(0)
-      // 全局锁：同一时间只有一个计时器
+      // 全局锁：清除旧计时器
       if (activeTimerRef.current) clearInterval(activeTimerRef.current)
-      activeTimerRef.current = setInterval(() => updatePosition(), 600)
+      // 启动兜底计时器（只在 onboundary 不触发时生效）
+      activeTimerRef.current = setInterval(() => {
+        if (boundaryFired) return // onboundary 已经接管，不需要估算
+        const ci = Math.floor((Date.now() - startTime) / 1000 * CHARS_PER_SECOND * rateRef.current)
+        applyPosition(ci)
+      }, 500)
     }
 
     utter.onend = () => {
