@@ -91,7 +91,7 @@ export function useSpeech() {
     const startOffset = firstParaOffset // 第一个段落跳过的字符数
     const offsets = batch.paraOffsets
     const batchStart = batch.startIndex
-    let boundaryFired = false
+    let lastBoundaryTime = 0 // onboundary 最后触发时间，超过 2s 则计时器接管
 
     const applyPosition = (ci: number) => {
       // ci 是 utterance 内的字符位置；第一个段落的实际全文位置 = startOffset + ci
@@ -118,14 +118,15 @@ export function useSpeech() {
     }
 
     utter.onboundary = (e) => {
-      boundaryFired = true
+      lastBoundaryTime = Date.now()
       applyPosition(e.charIndex)
     }
 
     utter.onstart = () => {
       if (activeTimerRef.current) clearInterval(activeTimerRef.current)
       activeTimerRef.current = setInterval(() => {
-        if (boundaryFired) return
+        // onboundary 最近 2 秒内触发过 → 让它主导；否则计时器接管
+        if (Date.now() - lastBoundaryTime < 2000) return
         const ci = Math.floor((Date.now() - startTime) / 1000 * calibratedCpsRef.current * rateRef.current)
         applyPosition(ci)
       }, 500)
@@ -133,7 +134,7 @@ export function useSpeech() {
 
     utter.onend = () => {
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
-      if (!boundaryFired) {
+      if (lastBoundaryTime === 0) {
         const elapsed = (Date.now() - startTime) / 1000
         if (elapsed > 2) {
           const actualCps = batch.text.length / elapsed / rateRef.current
