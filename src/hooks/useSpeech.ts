@@ -290,7 +290,13 @@ export function useSpeech() {
     }
   }, [speechRate, mode, speakBatch])
 
-  useEffect(() => () => { playerRef.current?.destroy() }, [])
+  useEffect(() => {
+    return () => {
+      speechSynthesis.cancel()
+      queuedBatchesRef.current.clear()
+      playerRef.current?.destroy()
+    }
+  }, [])
 
   return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback }
 }
