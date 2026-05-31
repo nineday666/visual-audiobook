@@ -29,10 +29,12 @@ export async function translateText(text: string): Promise<string> {
   const key = getApiKey()
   if (!key) throw new Error('请先设置 DeepSeek API Key')
 
-  const isEnglish = /^[a-zA-Z\s.,!?;:'"()\-]+$/.test(trimmed)
-  const prompt = isEnglish
-    ? `将以下英文翻译为中文，只返回译文，不要任何解释：\n\n${trimmed}`
-    : `将以下中文翻译为英文，只返回译文，不要任何解释：\n\n${trimmed}`
+  // 检测主要语言
+  const chineseChars = (trimmed.match(/[一-鿿]/g) || []).length
+  const isChinese = chineseChars > trimmed.length * 0.3
+  const prompt = isChinese
+    ? `Translate to English. Return ONLY the translation, no explanation:\n\n${trimmed}`
+    : `翻译成中文。只返回译文，不要解释：\n\n${trimmed}`
 
   const resp = await fetch(DEEPSEEK_API, {
     method: 'POST',
@@ -54,9 +56,14 @@ export async function translateText(text: string): Promise<string> {
   }
 
   const data = await resp.json()
-  const result = data.choices?.[0]?.message?.content?.trim() || ''
+  let result = data.choices?.[0]?.message?.content?.trim() || ''
 
-  // 缓存
+  // 检测翻译失败：结果和原文一样 = 没翻译
+  if (result === trimmed || result.length < 2) {
+    result = '翻译失败'
+  }
+
+  // 缓存（失败结果也缓存，避免重复请求）
   cache.set(trimmed, result)
   return result
 }
