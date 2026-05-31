@@ -61,6 +61,7 @@ export default function Reader() {
   const [repeatCount, setLocalRepeatCount] = useState(2)
   const [sentenceRepeat, setSentenceRepeat] = useState(false) // 单句复读模式
   const [activeSentence, setActiveSentence] = useState('') // 当前选中的句子文本
+  const [showVocab, setShowVocab] = useState(false)
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount, setActiveSentence: setSpeechSentence } = useSpeech()
 
   // 加载已标记词汇
@@ -503,12 +504,13 @@ export default function Reader() {
 
         {/* 听力模式：复读次数 + 单句模式 */}
         {appMode === 'listening' && (
+          <>
           <div className="mb-3 flex items-center justify-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">复读</span>
             {[1, 2, 3, 5, 0].map((n) => (
               <button
                 key={n}
-                onClick={() => { setLocalRepeatCount(n); setRepeatCount(n); setSentenceRepeat(false); setActiveSentence('') }}
+                onClick={() => { setLocalRepeatCount(n); setRepeatCount(n); setSentenceRepeat(false); setActiveSentence(''); setSpeechSentence('') }}
                 className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
                   repeatCount === n && !sentenceRepeat
                     ? 'bg-purple-500 text-white'
@@ -520,14 +522,47 @@ export default function Reader() {
             ))}
             <span className="text-slate-300">|</span>
             <button
-              onClick={() => { setSentenceRepeat(!sentenceRepeat); setActiveSentence('') }}
+              onClick={() => {
+                if (sentenceRepeat) { setActiveSentence(''); setSpeechSentence('') }
+                setSentenceRepeat(!sentenceRepeat)
+              }}
               className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
                 sentenceRepeat ? 'bg-orange-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
               }`}
             >
               单句
             </button>
+            <button
+              onClick={() => setShowVocab(!showVocab)}
+              className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                showVocab ? 'bg-yellow-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+              }`}
+            >
+              📝{markedWords.size > 0 ? ` ${markedWords.size}` : ''}
+            </button>
           </div>
+
+          {showVocab && (
+            <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-xl max-h-32 overflow-y-auto">
+              {markedWords.size === 0 ? (
+                <p className="text-xs text-slate-400 text-center">点击文字标记生词</p>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {[...markedWords].map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => handleMarkWord(w)}
+                      className="text-xs px-2 py-0.5 bg-yellow-200 dark:bg-yellow-800/40 text-yellow-800 dark:text-yellow-200 rounded hover:bg-red-200 dark:hover:bg-red-900/40 transition-colors"
+                      title="点击删除"
+                    >
+                      {w} ✕
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          </>
         )}
         {sentenceRepeat && activeSentence && (
           <div className="mb-3 text-center">
