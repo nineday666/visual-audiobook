@@ -36,8 +36,9 @@ function buildBatch(paragraphs: string[], fromIndex: number, firstParaOffset = 0
 export function useSpeech() {
   const [mode, setMode] = useState<TtsMode>('local')
   const repeatCountRef = useRef(1)
-  const activeSentenceRef = useRef('') // 单句复读文本
-  const sentenceParaIndexRef = useRef(0) // 进入单句模式时的段落位置，锁定不跳
+  const activeSentenceRef = useRef('') // 单句文本
+  const sentenceParaRef = useRef(0) // 进入单句时的段落
+  const sentenceOffsetRef = useRef(0) // 进入单句时，句子在段落中的起始字符位置
 
   const paragraphsRef = useRef<string[]>([])
   const currentIndexRef = useRef(0)
@@ -185,80 +186,58 @@ export function useSpeech() {
   }, [speechPitch, setCurrentCharOffset, stopAction])
 
   // === 听力模式：单段 / 单句复读 ===
-  const speakListening = useCallback((paraIndex: number, repeatLeft?: number, forceResetOffset = false) => {
+  const speakListening = useCallback((paraIndex: number, repeatLeft?: number) => {
     const repeats = repeatLeft ?? repeatCountRef.current
-    if (paraIndex >= paragraphsRef.current.length) {
-      stopAction()
-      return
-    }
-    // 单句模式：优先用选中句子
-    const sentence = activeSentenceRef.current
-    const text = sentence || paragraphsRef.current[paraIndex]
-    if (!text?.trim()) {
-      speakListening(paraIndex + 1, repeatCountRef.current)
-      return
-    }
+    const isSentence = !!activeSentenceRef.current
+
+    if (paraIndex >= paragraphsRef.current.length) { stopAction(); return }
+
+    const text = isSentence ? activeSentenceRef.current : paragraphsRef.current[paraIndex]
+    if (!text?.trim()) { speakListening(paraIndex + 1, repeatCountRef.current); return }
 
     const utter = new SpeechSynthesisUtterance(text)
-    utter.rate = rateRef.current
-    utter.pitch = speechPitch
-    utter.lang = settingsLang
-    utter.volume = 1
+    utter.rate = rateRef.current; utter.pitch = speechPitch; utter.lang = settingsLang; utter.volume = 1
     if (voiceRef.current) {
-      const voices = speechSynthesis.getVoices()
-      const v = voices.find((vv) => vv.voiceURI === voiceRef.current)
+      const v = speechSynthesis.getVoices().find((vv) => vv.voiceURI === voiceRef.current)
       if (v) utter.voice = v
     }
 
-    // 单句模式锁定段落位置
-    if (!activeSentenceRef.current) {
-      currentIndexRef.current = paraIndex
-      setCurrentParagraph(paraIndex)
-    } else {
-      setCurrentParagraph(sentenceParaIndexRef.current)
-    }
-    if (forceResetOffset || activeSentenceRef.current) {
-      setCurrentCharOffset(0)
-    }
+    // 段落：单句模式锁定，普通模式正常
+    const displayPara = isSentence ? sentenceParaRef.current : paraIndex
+    currentIndexRef.current = displayPara
+    setCurrentParagraph(displayPara)
+    // 字符偏移：单句从句子在段落中的位置开始
+    const baseOffset = isSentence ? sentenceOffsetRef.current : 0
+    setCurrentCharOffset(baseOffset)
 
-    // 高亮跟随：onboundary（桌面端）+ 计时器（手机端兜底）
-    let listenBoundaryFired = false
-    const listenStartTime = Date.now()
-    const listenTextLen = text.length
-    utter.onboundary = (e) => { listenBoundaryFired = true; setCurrentCharOffset(e.charIndex) }
+    let boundaryFired = false
+    const t0 = Date.now()
+    const tLen = text.length
+    utter.onboundary = (e) => { boundaryFired = true; setCurrentCharOffset(baseOffset + e.charIndex) }
     utter.onstart = () => {
-      paraStartRef.current = Date.now()
       if (activeTimerRef.current) clearInterval(activeTimerRef.current)
       activeTimerRef.current = setInterval(() => {
-        if (listenBoundaryFired) return
-        const ci = Math.floor((Date.now() - listenStartTime) / 1000 * CHARS_PER_SECOND * rateRef.current)
-        const off = Math.min(ci, listenTextLen - 1)
-        if (off > useReaderStore.getState().currentCharOffset + 2) {
-          setCurrentCharOffset(off)
-        }
+        if (boundaryFired) return
+        const ci = Math.floor((Date.now() - t0) / 1000 * CHARS_PER_SECOND * rateRef.current)
+        const off = Math.min(ci, tLen - 1)
+        const full = baseOffset + off
+        if (full > useReaderStore.getState().currentCharOffset + 1) setCurrentCharOffset(full)
       }, 500)
     }
 
     let ended = false
     utter.onend = () => {
-      if (ended) return // 防止重复触发
-      ended = true
+      if (ended) return; ended = true
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       if (!isPlayingRef.current) return
-      if (activeSentenceRef.current) {
-        speakListening(paraIndex, 0)
-        return
-      }
-      if (repeats === 0) {
-        speakListening(paraIndex, 0)
-      } else if (repeats > 1) {
-        speakListening(paraIndex, repeats - 1)
-      } else {
-        speakListening(paraIndex + 1, repeatCountRef.current)
-      }
+      if (isSentence) { speakListening(paraIndex, 0); return }
+      if (repeats === 0) speakListening(paraIndex, 0)
+      else if (repeats > 1) speakListening(paraIndex, repeats - 1)
+      else speakListening(paraIndex + 1, repeatCountRef.current)
     }
 
     utter.onerror = () => {
+      if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       if (isPlayingRef.current) speakListening(paraIndex + 1, repeatCountRef.current)
     }
 
@@ -391,18 +370,17 @@ export function useSpeech() {
   const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
   const setActiveSentence = useCallback((s: string, paraIndex?: number, charStart?: number) => {
     activeSentenceRef.current = s
-    if (s && paraIndex !== undefined) sentenceParaIndexRef.current = paraIndex
+    if (s) {
+      if (paraIndex !== undefined) sentenceParaRef.current = paraIndex
+      if (charStart !== undefined) sentenceOffsetRef.current = charStart
+    }
     if (isPlayingRef.current && appMode === 'listening') {
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       speechSynthesis.cancel()
-      const targetPara = s ? sentenceParaIndexRef.current : sentenceParaIndexRef.current
-      const reset = !s
-      setTimeout(() => {
-        speakListening(targetPara, undefined, reset)
-        if (s && charStart !== undefined) setCurrentCharOffset(charStart)
-      }, 80)
+      const para = s ? sentenceParaRef.current : sentenceParaRef.current
+      setTimeout(() => speakListening(para), 80)
     }
-  }, [appMode, speakListening, setCurrentCharOffset])
+  }, [appMode, speakListening])
 
   return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback, setRepeatCount, setActiveSentence }
 }
