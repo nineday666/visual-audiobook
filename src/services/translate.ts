@@ -2,8 +2,25 @@
 
 const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions'
 
-// 内存缓存：key = sentence, value = translation
+// 内存 + localStorage 双重缓存
 const cache = new Map<string, string>()
+
+function getCacheKey(bookId: string): string {
+  return `tr_${bookId}`
+}
+
+// 从 localStorage 恢复缓存
+export function loadCache(bookId: string): void {
+  try {
+    const saved = localStorage.getItem(getCacheKey(bookId))
+    if (saved) {
+      const data = JSON.parse(saved) as Record<string, string>
+      for (const [k, v] of Object.entries(data)) {
+        if (!cache.has(k)) cache.set(k, v)
+      }
+    }
+  } catch {}
+}
 
 function getApiKey(): string {
   return localStorage.getItem('deepseek_api_key') || ''
@@ -68,10 +85,10 @@ export async function translateText(text: string): Promise<string> {
   return result
 }
 
-// 批量翻译（并发控制）
+// 批量翻译 — 一次 API 调用翻 5 句，省钱
 export async function translateBatch(texts: string[]): Promise<Map<string, string>> {
   const results = new Map<string, string>()
-  const toFetch: string[] = []
+  const uncached: string[] = []
 
   for (const t of texts) {
     const trimmed = t.trim()
@@ -79,21 +96,89 @@ export async function translateBatch(texts: string[]): Promise<Map<string, strin
     if (cache.has(trimmed)) {
       results.set(trimmed, cache.get(trimmed)!)
     } else {
-      toFetch.push(trimmed)
+      uncached.push(trimmed)
     }
   }
 
-  // 逐个翻译（避免并发过高）
-  for (const t of toFetch) {
+  // 5句一批
+  const BATCH = 5
+  for (let i = 0; i < uncached.length; i += BATCH) {
+    const batch = uncached.slice(i, i + BATCH)
     try {
-      const r = await translateText(t)
-      results.set(t, r)
+      const batchResults = await translateBatchOnce(batch)
+      for (const [orig, trans] of batchResults) {
+        cache.set(orig, trans)
+        results.set(orig, trans)
+      }
     } catch {
-      results.set(t, '')
+      for (const t of batch) {
+        results.set(t, '翻译失败')
+        cache.set(t, '翻译失败')
+      }
     }
-    // 小延迟避免触发限流
-    await new Promise((r) => setTimeout(r, 200))
+    if (i + BATCH < uncached.length) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
   }
 
   return results
+}
+
+async function translateBatchOnce(texts: string[]): Promise<Map<string, string>> {
+  const key = getApiKey()
+  if (!key) throw new Error('No API key')
+
+  // 检测语言
+  const sample = texts[0] || ''
+  const chineseChars = (sample.match(/[一-鿿]/g) || []).length
+  const isChinese = chineseChars > sample.length * 0.3
+
+  const numbered = texts.map((t, i) => `[${i + 1}] ${t}`).join('\n')
+  const prompt = isChinese
+    ? `Translate each numbered sentence to English. Return EXACTLY in format:\n[1] translation\n[2] translation\n...\nNo extra text:\n\n${numbered}`
+    : `将以下每句翻译成中文。严格按格式返回：\n[1] 译文\n[2] 译文\n...\n不要多余文字：\n\n${numbered}`
+
+  const resp = await fetch(DEEPSEEK_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1000,
+      temperature: 0.3,
+    }),
+  })
+
+  if (!resp.ok) throw new Error(`API error ${resp.status}`)
+
+  const data = await resp.json()
+  const result = data.choices?.[0]?.message?.content?.trim() || ''
+
+  // 解析 `[1] xxx` 格式
+  const map = new Map<string, string>()
+  const lines = result.split('\n')
+  for (let i = 0; i < texts.length; i++) {
+    const idx = i + 1
+    let found = ''
+    for (const line of lines) {
+      const m = line.match(new RegExp(`^\\[${idx}\\]\\s*(.+)`))
+      if (m) { found = m[1].trim(); break }
+    }
+    if (found && found !== texts[i]) {
+      map.set(texts[i], found)
+    } else {
+      map.set(texts[i], '翻译失败')
+    }
+  }
+
+  return map
+}
+
+// 保存给定 bookId 的缓存到 localStorage
+export function saveCache(bookId: string): void {
+  try {
+    const obj: Record<string, string> = {}
+    for (const [k, v] of cache) obj[k] = v
+    localStorage.setItem(getCacheKey(bookId), JSON.stringify(obj))
+  } catch {}
 }

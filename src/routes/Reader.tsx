@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useSpeech } from '../hooks/useSpeech'
 import { useMediaSession } from '../hooks/useMediaSession'
 import { hasProxyUrl, setProxyUrl } from '../services/edge-tts'
-import { translateText, hasApiKey } from '../services/translate'
+import { translateText, translateBatch, hasApiKey, loadCache, saveCache } from '../services/translate'
 import type { Book, ContextMenuState } from '../types'
 import {
   FONT_SIZE_MAP,
@@ -74,40 +74,54 @@ export default function Reader() {
   const [translationVisible, setTranslationVisible] = useState('') // 点击翻译的浮窗句子
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount, setActiveSentence: setSpeechSentence } = useSpeech()
 
-  // 加载已标记词汇
+  // 加载已标记词汇 + 翻译缓存
   useEffect(() => {
     if (!id) return
     try {
       const saved = localStorage.getItem(`vocab_${id}`)
       if (saved) setMarkedWords(new Set(JSON.parse(saved)))
     } catch {}
+    loadCache(id)
   }, [id])
 
-  // 全部翻译模式：自动翻译所有句子
+  // 退出时保存翻译
+  useEffect(() => {
+    return () => { if (id) saveCache(id) }
+  }, [id])
+
+  // 全部翻译模式：批量翻译（5句/次）
   useEffect(() => {
     if (translationMode !== 'all' || !book || !hasApiKey()) return
     const sentences = new Set<string>()
     for (const p of book.paragraphs) {
       const parts = p.split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
-      for (const s of parts) { if (!translations.has(s.trim())) sentences.add(s.trim()) }
+      for (const s of parts) {
+        const key = s.trim()
+        if (!translations.has(key) && !translating.has(key)) sentences.add(key)
+      }
     }
-    if (sentences.size === 0) return
-    // 逐个翻译（慢慢来，不阻塞）
     const arr = [...sentences]
+    if (arr.length === 0) return
+
+    const BATCH = 5
     let i = 0
     const timer = setInterval(async () => {
       if (i >= arr.length) { clearInterval(timer); return }
-      const s = arr[i]
-      if (!translating.has(s) && !translations.has(s)) {
-        setTranslating((p) => new Set(p).add(s))
-        try {
-          const r = await translateText(s)
-          setTranslations((p) => new Map(p).set(s, r))
-        } catch {}
-        setTranslating((p) => { const n = new Set(p); n.delete(s); return n })
-      }
-      i++
-    }, 500) // 每500ms一句，避免API限流
+      const batch = arr.slice(i, i + BATCH)
+      // 标记为翻译中
+      setTranslating((p) => { const n = new Set(p); batch.forEach((s) => n.add(s)); return n })
+      try {
+        const results = await translateBatch(batch)
+        setTranslations((prev) => {
+          const next = new Map(prev)
+          for (const [k, v] of results) next.set(k, v)
+          return next
+        })
+        if (id) saveCache(id)
+      } catch {}
+      setTranslating((p) => { const n = new Set(p); batch.forEach((s) => n.delete(s)); return n })
+      i += BATCH
+    }, 300)
     return () => clearInterval(timer)
   }, [translationMode, book?.id, hasApiKey()])
 

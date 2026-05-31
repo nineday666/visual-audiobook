@@ -133,7 +133,7 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
             })}
             {/* 翻译 */}
             {translationMode === 'all' && translations?.has(sentenceKey) && (
-              <span className="block text-xs text-slate-400 italic mt-0.5 ml-1 border-l-2 border-slate-300 dark:border-slate-600 pl-2">
+              <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 ml-1 border-l-2 border-blue-300 dark:border-blue-700 pl-2">
                 {translations.get(sentenceKey)}
               </span>
             )}
