@@ -90,25 +90,35 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
         const words = splitWords(sentence)
         const sentenceKey = sentence.trim()
         const isSentenceActive = activeSentence === sentenceKey
-        // 朗读高亮：检查当前 charOffset 是否落在此句中
+        // 朗读高亮：精确到词级别
         const inThisSentence = isActive && charOffset >= sentenceStart && charOffset < sentenceStart + sentenceLen
+        const relOffset = charOffset - sentenceStart // 句内字符偏移
+        // 计算每个词在句内的字符范围
+        let wordCharPos = 0
+        const wordRanges = words.map((w) => {
+          const start = wordCharPos
+          wordCharPos += w.length
+          return { start, end: wordCharPos, word: w }
+        })
+        const activeWordIdx = wordRanges.findIndex((r) => relOffset >= r.start && relOffset < r.end)
         return (
           <span
             key={si}
-            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : inThisSentence ? 'word-highlight' : ''}`}
+            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : ''}`}
             onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey, index) }}
-            title={isSentenceActive ? '双击取消' : inThisSentence ? '正在朗读此句' : '双击选中此句复读'}
+            title={isSentenceActive ? '双击取消' : '双击选中此句复读'}
           >
             {words.map((w, i) => {
               const key = normalizeWord(w)
               if (!key) return <span key={i}>{w}</span>
               const isMarked = markedWords.has(key)
+              const isReading = inThisSentence && i === activeWordIdx
               return (
                 <span
                   key={i}
-                  className={`cursor-pointer ${isMarked ? 'bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5' : ''}`}
+                  className={`cursor-pointer ${isReading ? 'word-highlight' : ''} ${isMarked ? 'bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5' : ''}`}
                   onClick={(e2) => { e2.stopPropagation(); onMarkWord(key) }}
-                  title={isMarked ? '点击取消标记' : '点击标记生词'}
+                  title={isReading ? '正在朗读' : isMarked ? '点击取消标记' : '点击标记生词'}
                 >
                   {w}
                 </span>
