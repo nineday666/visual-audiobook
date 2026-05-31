@@ -237,10 +237,12 @@ export function useSpeech() {
       }, 500)
     }
 
+    let ended = false
     utter.onend = () => {
+      if (ended) return // 防止重复触发
+      ended = true
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       if (!isPlayingRef.current) return
-      // 单句模式：永远重复这个句子，不推进段落
       if (activeSentenceRef.current) {
         speakListening(paraIndex, 0)
         return
@@ -389,6 +391,7 @@ export function useSpeech() {
     activeSentenceRef.current = s
     if (s && paraIndex !== undefined) sentenceParaIndexRef.current = paraIndex
     if (isPlayingRef.current && appMode === 'listening') {
+      if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       speechSynthesis.cancel()
       speakListening(s ? sentenceParaIndexRef.current : currentIndexRef.current)
     }
