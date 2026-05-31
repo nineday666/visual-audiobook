@@ -26,11 +26,13 @@ export interface AppSettings {
   speechRate: number
   speechPitch: number
   preferredVoiceURI: string
+  language: TtsLanguage
   fontSize: FontSize
   lineHeight: LineHeight
   theme: Theme
 }
 
+export type TtsLanguage = 'zh-CN' | 'en-US'
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl'
 export type LineHeight = 'compact' | 'normal' | 'relaxed'
 export type Theme = 'light' | 'dark'

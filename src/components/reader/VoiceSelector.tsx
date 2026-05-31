@@ -14,27 +14,30 @@ function VoiceSelector({ disabled }: Props) {
   const [expanded, setExpanded] = useState(false)
   const selectedVoiceURI = useReaderStore((s) => s.selectedVoiceURI)
   const setVoice = useReaderStore((s) => s.setVoice)
+  const language = useSettingsStore((s) => s.language)
 
   const loadVoices = useCallback(() => {
     setLoading(true)
     getSpeechEngine().getVoices().then((v) => {
-      const zhVoices = v.filter((voice) =>
-        voice.lang.startsWith('zh') || voice.lang.includes('cmn') || voice.lang.includes('yue')
-      )
-      const otherVoices = v.filter((voice) =>
-        !voice.lang.startsWith('zh') && !voice.lang.includes('cmn') && !voice.lang.includes('yue')
-      )
-      setVoices([...zhVoices, ...otherVoices])
+      // 先按当前语言过滤，匹配的排前
+      const langPrefix = language === 'zh-CN' ? 'zh' : 'en'
+      const matched = v.filter((voice) => voice.lang.startsWith(langPrefix))
+      const others = v.filter((voice) => !voice.lang.startsWith(langPrefix))
+      setVoices([...matched, ...others])
       setLoading(false)
     })
-  }, [])
+  }, [language])
 
   useEffect(() => {
     loadVoices()
-    // 持续监听语音列表变化（移动端可能异步加载）
     const engine = getSpeechEngine()
     engine.onVoicesChanged(() => loadVoices())
   }, [loadVoices])
+
+  // 语言切换时重新加载语音列表
+  useEffect(() => {
+    loadVoices()
+  }, [language, loadVoices])
 
   // 点击按钮时：展开列表 或 重试加载
   const handleClick = useCallback(() => {

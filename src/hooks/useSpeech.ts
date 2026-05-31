@@ -64,6 +64,7 @@ export function useSpeech() {
   const pauseAction = useReaderStore((s) => s.pause)
   const playAction = useReaderStore((s) => s.play)
   const settingsRate = useSettingsStore((s) => s.speechRate)
+  const settingsLang = useSettingsStore((s) => s.language)
 
   paragraphsRef.current = paragraphs
   currentIndexRef.current = currentParaIndex
@@ -79,7 +80,7 @@ export function useSpeech() {
     const utter = new SpeechSynthesisUtterance(batch.text)
     utter.rate = rateRef.current
     utter.pitch = speechPitch
-    utter.lang = 'zh-CN'
+    utter.lang = settingsLang
     utter.volume = 1
     if (voiceRef.current) {
       const voices = speechSynthesis.getVoices()

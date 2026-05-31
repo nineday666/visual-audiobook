@@ -53,6 +53,8 @@ export default function Reader() {
   const lineHeight = useSettingsStore((s) => s.lineHeight)
   const setLineHeight = useSettingsStore((s) => s.setLineHeight)
   const setFontSize = useSettingsStore((s) => s.setFontSize)
+  const language = useSettingsStore((s) => s.language)
+  const setLanguage = useSettingsStore((s) => s.setLanguage)
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode } = useSpeech()
   useMediaSession()
 
@@ -310,7 +312,7 @@ export default function Reader() {
                   </div>
                 </div>
                 {/* 行距 */}
-                <div>
+                <div className="mb-3">
                   <p className="text-xs text-slate-500 mb-1.5">行距</p>
                   <div className="flex gap-1">
                     {(['compact', 'normal', 'relaxed'] as const).map((lh) => (
@@ -326,6 +328,32 @@ export default function Reader() {
                         {lh === 'compact' ? '紧' : lh === 'normal' ? '常' : '松'}
                       </button>
                     ))}
+                  </div>
+                </div>
+                {/* 语言 */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-1.5">朗读语言</p>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setLanguage('zh-CN')}
+                      className={`flex-1 text-xs py-1 rounded-md transition-colors ${
+                        language === 'zh-CN'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      中文
+                    </button>
+                    <button
+                      onClick={() => setLanguage('en-US')}
+                      className={`flex-1 text-xs py-1 rounded-md transition-colors ${
+                        language === 'en-US'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      English
+                    </button>
                   </div>
                 </div>
               </div>
