@@ -13,7 +13,7 @@ interface Props {
   onMarkWord?: (word: string) => void
   isListeningMode?: boolean
   activeSentence?: string
-  onSelectSentence?: (sentence: string, paraIndex: number) => void
+  onSelectSentence?: (sentence: string, paraIndex: number, charStart: number) => void
 }
 
 // 按中英文标点切分句子
@@ -105,7 +105,7 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
           <span
             key={si}
             className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : ''}`}
-            onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey, index) }}
+            onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey, index, sentenceStart) }}
             title={isSentenceActive ? '双击取消' : '双击选中此句复读'}
           >
             {words.map((w, i) => {

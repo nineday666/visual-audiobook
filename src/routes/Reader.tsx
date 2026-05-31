@@ -86,14 +86,14 @@ export default function Reader() {
     })
   }, [id])
 
-  const handleSelectSentence = useCallback((sentence: string, paraIndex: number) => {
+  const handleSelectSentence = useCallback((sentence: string, paraIndex: number, charStart: number) => {
     if (activeSentence === sentence) {
       setActiveSentence('')
-      setSpeechSentence('', 0)
+      setSpeechSentence('', 0, 0)
       setSentenceRepeat(false)
     } else {
       setActiveSentence(sentence)
-      setSpeechSentence(sentence, paraIndex)
+      setSpeechSentence(sentence, paraIndex, charStart)
       setSentenceRepeat(true)
     }
   }, [activeSentence, setSpeechSentence])

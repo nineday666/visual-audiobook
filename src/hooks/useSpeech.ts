@@ -389,18 +389,20 @@ export function useSpeech() {
   }, [])
 
   const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
-  const setActiveSentence = useCallback((s: string, paraIndex?: number) => {
+  const setActiveSentence = useCallback((s: string, paraIndex?: number, charStart?: number) => {
     activeSentenceRef.current = s
     if (s && paraIndex !== undefined) sentenceParaIndexRef.current = paraIndex
     if (isPlayingRef.current && appMode === 'listening') {
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       speechSynthesis.cancel()
-      const targetPara = s ? sentenceParaIndexRef.current : currentIndexRef.current
-      // 短暂延迟确保 cancel 在 Android 上完全生效
-      const reset = !s // 退出句子模式时强制重置位置
-      setTimeout(() => speakListening(targetPara, undefined, reset), 80)
+      const targetPara = s ? sentenceParaIndexRef.current : sentenceParaIndexRef.current
+      const reset = !s
+      setTimeout(() => {
+        speakListening(targetPara, undefined, reset)
+        if (s && charStart !== undefined) setCurrentCharOffset(charStart)
+      }, 80)
     }
-  }, [appMode, speakListening])
+  }, [appMode, speakListening, setCurrentCharOffset])
 
   return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback, setRepeatCount, setActiveSentence }
 }
