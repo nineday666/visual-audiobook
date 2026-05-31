@@ -364,7 +364,14 @@ export function useSpeech() {
   }, [])
 
   const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
-  const setActiveSentence = useCallback((s: string) => { activeSentenceRef.current = s }, [])
+  const setActiveSentence = useCallback((s: string) => {
+    activeSentenceRef.current = s
+    // 如果正在播放听力模式，立即中断并重新开始（用新句子或清句子）
+    if (isPlayingRef.current && appMode === 'listening') {
+      speechSynthesis.cancel()
+      speakListening(currentIndexRef.current)
+    }
+  }, [appMode, speakListening])
 
   return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback, setRepeatCount, setActiveSentence }
 }
