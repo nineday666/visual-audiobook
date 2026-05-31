@@ -30,6 +30,7 @@ export interface AppSettings {
   listeningVoiceURI: string    // 听力模式音色
   language: TtsLanguage
   appMode: AppMode
+  translationMode: TranslationMode
   fontSize: FontSize
   lineHeight: LineHeight
   theme: Theme
@@ -37,6 +38,7 @@ export interface AppSettings {
 
 export type TtsLanguage = 'zh-CN' | 'en-US'
 export type AppMode = 'audiobook' | 'listening'
+export type TranslationMode = 'off' | 'click' | 'all'
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl'
 export type LineHeight = 'compact' | 'normal' | 'relaxed'
 export type Theme = 'light' | 'dark'

@@ -14,6 +14,12 @@ interface Props {
   isListeningMode?: boolean
   activeSentence?: string
   onSelectSentence?: (sentence: string, paraIndex: number, charStart: number) => void
+  translations?: Map<string, string>
+  translationMode?: 'off' | 'click' | 'all'
+  translating?: Set<string>
+  onRequestTranslate?: (sentence: string) => void
+  translationVisible?: string
+  onShowTranslation?: (sentence: string) => void
 }
 
 // 按中英文标点切分句子
@@ -52,7 +58,7 @@ function normalizeWord(w: string): string {
   return w.toLowerCase().replace(/[.,!?;:'"()\[\]{}，。！？；：""''（）【】\s]+/g, '').trim()
 }
 
-function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, markedWords, onMarkWord, isListeningMode, activeSentence, onSelectSentence }: Props) {
+function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, markedWords, onMarkWord, isListeningMode, activeSentence, onSelectSentence, translations, translationMode, translating, translationVisible, onRequestTranslate }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -106,7 +112,8 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
             key={si}
             className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : ''}`}
             onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey, index, sentenceStart) }}
-            title={isSentenceActive ? '双击取消' : '双击选中此句复读'}
+            onClick={(e) => { if (translationMode === 'click') { e.stopPropagation(); onRequestTranslate?.(sentenceKey) } }}
+            title={isSentenceActive ? '双击取消' : translationMode === 'click' ? '点击翻译' : '双击选中此句复读'}
           >
             {words.map((w, i) => {
               const key = normalizeWord(w)
@@ -124,6 +131,20 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
                 </span>
               )
             })}
+            {/* 翻译 */}
+            {translationMode === 'all' && translations?.has(sentenceKey) && (
+              <span className="block text-xs text-slate-400 italic mt-0.5 ml-1 border-l-2 border-slate-300 dark:border-slate-600 pl-2">
+                {translations.get(sentenceKey)}
+              </span>
+            )}
+            {translationMode === 'all' && translating?.has(sentenceKey) && (
+              <span className="block text-xs text-slate-300 animate-pulse mt-0.5 ml-1">翻译中...</span>
+            )}
+            {translationMode === 'click' && translationVisible === sentenceKey && translations?.has(sentenceKey) && (
+              <span className="block text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 rounded px-2 py-1 mt-1 italic border-l-2 border-blue-400">
+                {translations.get(sentenceKey)}
+              </span>
+            )}
           </span>
         )
       })

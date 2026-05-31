@@ -6,6 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useSpeech } from '../hooks/useSpeech'
 import { useMediaSession } from '../hooks/useMediaSession'
 import { hasProxyUrl, setProxyUrl } from '../services/edge-tts'
+import { translateText, hasApiKey } from '../services/translate'
 import type { Book, ContextMenuState } from '../types'
 import {
   FONT_SIZE_MAP,
@@ -58,6 +59,8 @@ export default function Reader() {
   const language = useSettingsStore((s) => s.language)
   const setLanguage = useSettingsStore((s) => s.setLanguage)
   const appMode = useSettingsStore((s) => s.appMode)
+  const translationMode = useSettingsStore((s) => s.translationMode)
+  const setTranslationMode = useSettingsStore((s) => s.setTranslationMode)
   // 模式切换时停止播放
   useEffect(() => { stopPlayback() }, [appMode])
 
@@ -65,6 +68,10 @@ export default function Reader() {
   const [sentenceRepeat, setSentenceRepeat] = useState(false) // 单句复读模式
   const [activeSentence, setActiveSentence] = useState('') // 当前选中的句子文本
   const [showVocab, setShowVocab] = useState(false)
+  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('deepseek_api_key') || '')
+  const [translations, setTranslations] = useState<Map<string, string>>(new Map())
+  const [translating, setTranslating] = useState<Set<string>>(new Set())
+  const [translationVisible, setTranslationVisible] = useState('') // 点击翻译的浮窗句子
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount, setActiveSentence: setSpeechSentence } = useSpeech()
 
   // 加载已标记词汇
@@ -76,6 +83,34 @@ export default function Reader() {
     } catch {}
   }, [id])
 
+  // 全部翻译模式：自动翻译所有句子
+  useEffect(() => {
+    if (translationMode !== 'all' || !book || !hasApiKey()) return
+    const sentences = new Set<string>()
+    for (const p of book.paragraphs) {
+      const parts = p.split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
+      for (const s of parts) { if (!translations.has(s.trim())) sentences.add(s.trim()) }
+    }
+    if (sentences.size === 0) return
+    // 逐个翻译（慢慢来，不阻塞）
+    const arr = [...sentences]
+    let i = 0
+    const timer = setInterval(async () => {
+      if (i >= arr.length) { clearInterval(timer); return }
+      const s = arr[i]
+      if (!translating.has(s) && !translations.has(s)) {
+        setTranslating((p) => new Set(p).add(s))
+        try {
+          const r = await translateText(s)
+          setTranslations((p) => new Map(p).set(s, r))
+        } catch {}
+        setTranslating((p) => { const n = new Set(p); n.delete(s); return n })
+      }
+      i++
+    }, 500) // 每500ms一句，避免API限流
+    return () => clearInterval(timer)
+  }, [translationMode, book?.id, hasApiKey()])
+
   const handleMarkWord = useCallback((word: string) => {
     setMarkedWords((prev) => {
       const next = new Set(prev)
@@ -85,6 +120,19 @@ export default function Reader() {
       return next
     })
   }, [id])
+
+  // 翻译请求
+  const handleTranslate = useCallback(async (sentence: string) => {
+    if (!hasApiKey() || translationMode === 'off') return
+    if (translationMode === 'click') setTranslationVisible(sentence)
+    if (translations.has(sentence) || translating.has(sentence)) return
+    setTranslating((p) => new Set(p).add(sentence))
+    try {
+      const result = await translateText(sentence)
+      setTranslations((p) => new Map(p).set(sentence, result))
+    } catch { /* 失败不处理 */ }
+    finally { setTranslating((p) => { const n = new Set(p); n.delete(sentence); return n }) }
+  }, [translationMode, translations, translating])
 
   const handleSelectSentence = useCallback((sentence: string, paraIndex: number, charStart: number) => {
     if (activeSentence === sentence) {
@@ -376,6 +424,39 @@ export default function Reader() {
                     ))}
                   </div>
                 </div>
+                {/* DeepSeek Key */}
+                <div className="mb-3">
+                  <p className="text-xs text-slate-500 mb-1">DeepSeek Key</p>
+                  <input
+                    type="password"
+                    placeholder="sk-..."
+                    value={apiKeyInput}
+                    onChange={(e) => {
+                      setApiKeyInput(e.target.value)
+                      localStorage.setItem('deepseek_api_key', e.target.value.trim())
+                    }}
+                    className="w-full text-xs px-2 py-1 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500"
+                  />
+                </div>
+                {/* 翻译模式 */}
+                <div className="mb-3">
+                  <p className="text-xs text-slate-500 mb-1.5">翻译</p>
+                  <div className="flex gap-1">
+                    {(['off', 'click', 'all'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setTranslationMode(m)}
+                        className={`flex-1 text-xs py-1 rounded-md transition-colors ${
+                          translationMode === m
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {m === 'off' ? '关' : m === 'click' ? '点击' : '全部'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {/* 语言 */}
                 <div>
                   <p className="text-xs text-slate-500 mb-1.5">朗读语言</p>
@@ -463,6 +544,11 @@ export default function Reader() {
               isListeningMode={appMode === 'listening'}
               activeSentence={appMode === 'listening' ? activeSentence : undefined}
               onSelectSentence={appMode === 'listening' ? handleSelectSentence : undefined}
+              translations={translationMode !== 'off' ? translations : undefined}
+              translationMode={translationMode}
+              translating={translationMode !== 'off' ? translating : undefined}
+              translationVisible={translationMode === 'click' ? translationVisible : undefined}
+              onRequestTranslate={translationMode === 'click' ? handleTranslate : undefined}
             />
           ))}
         </div>

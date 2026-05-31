@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, FontSize, LineHeight, Theme, TtsLanguage, AppMode } from '../types'
+import type { AppSettings, FontSize, LineHeight, Theme, TtsLanguage, AppMode, TranslationMode } from '../types'
 import { getSettings, saveSettings } from '../services/db'
 
 interface SettingsStore extends AppSettings {
@@ -12,6 +12,7 @@ interface SettingsStore extends AppSettings {
   setListeningVoice: (uri: string) => void
   setLanguage: (lang: TtsLanguage) => void
   setAppMode: (mode: AppMode) => void
+  setTranslationMode: (mode: TranslationMode) => void
   setFontSize: (size: FontSize) => void
   setLineHeight: (lh: LineHeight) => void
   setTheme: (theme: Theme) => void
@@ -26,6 +27,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   listeningVoiceURI: '',
   language: 'zh-CN',
   appMode: 'audiobook',
+  translationMode: 'off',
   fontSize: 'md',
   lineHeight: 'normal',
   theme: 'light',
@@ -69,6 +71,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setAppMode: (mode: AppMode) => {
     set({ appMode: mode })
     saveSettings({ appMode: mode })
+  },
+
+  setTranslationMode: (mode: TranslationMode) => {
+    set({ translationMode: mode })
+    saveSettings({ translationMode: mode })
   },
 
   setFontSize: (size: FontSize) => {
