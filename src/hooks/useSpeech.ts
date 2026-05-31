@@ -35,6 +35,7 @@ function buildBatch(paragraphs: string[], fromIndex: number, firstParaOffset = 0
 
 export function useSpeech() {
   const [mode, setMode] = useState<TtsMode>('local')
+  const repeatCountRef = useRef(1) // 听力模式复读次数
 
   const paragraphsRef = useRef<string[]>([])
   const currentIndexRef = useRef(0)
@@ -65,6 +66,7 @@ export function useSpeech() {
   const playAction = useReaderStore((s) => s.play)
   const settingsRate = useSettingsStore((s) => s.speechRate)
   const settingsLang = useSettingsStore((s) => s.language)
+  const appMode = useSettingsStore((s) => s.appMode)
 
   paragraphsRef.current = paragraphs
   currentIndexRef.current = currentParaIndex
@@ -180,8 +182,62 @@ export function useSpeech() {
     return utter
   }, [speechPitch, setCurrentCharOffset, stopAction])
 
-  // 启动本地播放：支持从段落中间恢复
+  // === 听力模式：单段复读 ===
+  const speakListening = useCallback((paraIndex: number, repeatLeft?: number) => {
+    const repeats = repeatLeft ?? repeatCountRef.current
+    if (paraIndex >= paragraphsRef.current.length) {
+      stopAction()
+      return
+    }
+    const text = paragraphsRef.current[paraIndex]
+    if (!text?.trim()) {
+      speakListening(paraIndex + 1, repeatCountRef.current)
+      return
+    }
+
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.rate = rateRef.current
+    utter.pitch = speechPitch
+    utter.lang = settingsLang
+    utter.volume = 1
+    if (voiceRef.current) {
+      const voices = speechSynthesis.getVoices()
+      const v = voices.find((vv) => vv.voiceURI === voiceRef.current)
+      if (v) utter.voice = v
+    }
+
+    currentIndexRef.current = paraIndex
+    setCurrentParagraph(paraIndex)
+    setCurrentCharOffset(0)
+
+    // 听力模式用 onboundary 做高亮（同桌面端逻辑）
+    utter.onboundary = (e) => setCurrentCharOffset(e.charIndex)
+    utter.onstart = () => paraStartRef.current = Date.now()
+
+    utter.onend = () => {
+      if (!isPlayingRef.current) return
+      if (repeats > 1) {
+        // 继续复读当前段
+        speakListening(paraIndex, repeats - 1)
+      } else {
+        // 复读完 → 下一段
+        speakListening(paraIndex + 1, repeatCountRef.current)
+      }
+    }
+
+    utter.onerror = () => {
+      if (isPlayingRef.current) speakListening(paraIndex + 1, repeatCountRef.current)
+    }
+
+    speechSynthesis.speak(utter)
+  }, [speechPitch, settingsLang, setCurrentParagraph, setCurrentCharOffset, stopAction])
+
+  // 启动本地播放：听书模式走批次，听力模式走单段复读
   const speakBatch = useCallback((fromIndex: number, firstParaOffset = 0) => {
+    if (appMode === 'listening') {
+      speakListening(fromIndex)
+      return
+    }
     queuedBatchesRef.current.clear()
     const u1 = makeBatchUtter(fromIndex, firstParaOffset)
     if (!u1) return
@@ -192,7 +248,7 @@ export function useSpeech() {
       queuedBatchesRef.current.add(fromIndex + BATCH_SIZE)
       speechSynthesis.speak(u2)
     }
-  }, [makeBatchUtter])
+  }, [makeBatchUtter, appMode, speakListening])
 
   // === 云端模式 ===
   const initPlayer = useCallback((): AudioPlayer => {
@@ -299,5 +355,7 @@ export function useSpeech() {
     }
   }, [])
 
-  return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback }
+  const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
+
+  return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback, setRepeatCount }
 }

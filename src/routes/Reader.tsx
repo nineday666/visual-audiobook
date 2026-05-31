@@ -40,7 +40,9 @@ export default function Reader() {
   const [proxyUrlInput, setProxyUrlInput] = useState('')
   const [forceLocal, setForceLocal] = useState(false)
   const [userScrolled, setUserScrolled] = useState(false)
-  const [showSettings, setShowSettings] = useState(false) // 用户手动滚动后停止自动跟随
+  const [showSettings, setShowSettings] = useState(false)
+  // 词汇标记（听力模式）
+  const [markedWords, setMarkedWords] = useState<Set<string>>(new Set()) // 用户手动滚动后停止自动跟随
 
   // === 精细 selector ===
   const currentParaIndex = useReaderStore((s) => s.currentParaIndex)
@@ -55,7 +57,28 @@ export default function Reader() {
   const setFontSize = useSettingsStore((s) => s.setFontSize)
   const language = useSettingsStore((s) => s.language)
   const setLanguage = useSettingsStore((s) => s.setLanguage)
-  const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode } = useSpeech()
+  const appMode = useSettingsStore((s) => s.appMode)
+  const [repeatCount, setLocalRepeatCount] = useState(2)
+  const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount } = useSpeech()
+
+  // 加载已标记词汇
+  useEffect(() => {
+    if (!id) return
+    try {
+      const saved = localStorage.getItem(`vocab_${id}`)
+      if (saved) setMarkedWords(new Set(JSON.parse(saved)))
+    } catch {}
+  }, [id])
+
+  const handleMarkWord = useCallback((word: string) => {
+    setMarkedWords((prev) => {
+      const next = new Set(prev)
+      if (next.has(word)) next.delete(word)
+      else next.add(word)
+      localStorage.setItem(`vocab_${id}`, JSON.stringify([...next]))
+      return next
+    })
+  }, [id])
   useMediaSession()
 
   const paraRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -412,6 +435,9 @@ export default function Reader() {
               charOffset={isCurrentPara(i) ? currentCharOffset : -1}
               paraRefs={paraRefs}
               onLongPress={handleLongPress}
+              markedWords={appMode === 'listening' ? markedWords : undefined}
+              onMarkWord={appMode === 'listening' ? handleMarkWord : undefined}
+              isListeningMode={appMode === 'listening'}
             />
           ))}
         </div>
@@ -452,6 +478,26 @@ export default function Reader() {
             {formatTime(totalSeconds)}
           </span>
         </div>
+
+        {/* 听力模式：复读次数 */}
+        {appMode === 'listening' && (
+          <div className="mb-3 flex items-center justify-center gap-2">
+            <span className="text-xs text-slate-500">复读</span>
+            {[1, 2, 3, 5].map((n) => (
+              <button
+                key={n}
+                onClick={() => { setLocalRepeatCount(n); setRepeatCount(n) }}
+                className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                  repeatCount === n
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                }`}
+              >
+                {n === 1 ? '关' : `${n}遍`}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 时间输入跳转 */}
         <div className="mb-3 flex items-center justify-center gap-2">

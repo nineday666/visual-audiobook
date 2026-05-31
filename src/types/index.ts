@@ -27,12 +27,14 @@ export interface AppSettings {
   speechPitch: number
   preferredVoiceURI: string
   language: TtsLanguage
+  appMode: AppMode
   fontSize: FontSize
   lineHeight: LineHeight
   theme: Theme
 }
 
 export type TtsLanguage = 'zh-CN' | 'en-US'
+export type AppMode = 'audiobook' | 'listening'
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl'
 export type LineHeight = 'compact' | 'normal' | 'relaxed'
 export type Theme = 'light' | 'dark'

@@ -7,6 +7,7 @@ import type { Book } from '../types'
 import FileDropZone from '../components/common/FileDropZone'
 import BookCard from '../components/library/BookCard'
 import { getCoverStyle } from '../utils/cover'
+import { useSettingsStore } from '../stores/settingsStore'
 
 export default function Library() {
   const [books, setBooks] = useState<Book[]>([])
@@ -17,6 +18,8 @@ export default function Library() {
   const navigate = useNavigate()
   const dragFromRef = useRef<number | null>(null)
   const dropTargetRef = useRef<number | null>(null) // 实时值，dragEnd 直接用
+  const appMode = useSettingsStore((s) => s.appMode)
+  const setAppMode = useSettingsStore((s) => s.setAppMode)
 
   const refreshBooks = useCallback(async () => {
     const all = await getAllBooks()
@@ -107,7 +110,32 @@ export default function Library() {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-950/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 py-4">
-        <h1 className="text-xl font-bold text-center">📖 可视化听书</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">📖 可视化听书</h1>
+          {/* 模式切换 */}
+          <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setAppMode('audiobook')}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                appMode === 'audiobook'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm font-medium'
+                  : 'text-slate-500'
+              }`}
+            >
+              听书
+            </button>
+            <button
+              onClick={() => setAppMode('listening')}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                appMode === 'listening'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm font-medium'
+                  : 'text-slate-500'
+              }`}
+            >
+              听力
+            </button>
+          </div>
+        </div>
       </header>
 
       <div className="p-4">
