@@ -216,7 +216,10 @@ export function useSpeech() {
 
     utter.onend = () => {
       if (!isPlayingRef.current) return
-      if (repeats > 1) {
+      if (repeats === 0) {
+        // 无限复读：一直重复当前段
+        speakListening(paraIndex, 0)
+      } else if (repeats > 1) {
         // 继续复读当前段
         speakListening(paraIndex, repeats - 1)
       } else {

@@ -483,7 +483,7 @@ export default function Reader() {
         {appMode === 'listening' && (
           <div className="mb-3 flex items-center justify-center gap-2">
             <span className="text-xs text-slate-500">复读</span>
-            {[1, 2, 3, 5].map((n) => (
+            {[1, 2, 3, 5, 0].map((n) => (
               <button
                 key={n}
                 onClick={() => { setLocalRepeatCount(n); setRepeatCount(n) }}
@@ -493,7 +493,7 @@ export default function Reader() {
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                 }`}
               >
-                {n === 1 ? '关' : `${n}遍`}
+                {n === 0 ? '∞' : n === 1 ? '关' : `${n}遍`}
               </button>
             ))}
           </div>
