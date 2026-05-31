@@ -77,7 +77,7 @@ export default function Reader() {
   const [sentenceRepeat, setSentenceRepeat] = useState(false) // 单句复读模式
   const [activeSentence, setActiveSentence] = useState('') // 当前选中的句子文本
   const [showVocab, setShowVocab] = useState(false)
-  const [vocabPos, setVocabPos] = useState({ x: 0, y: 0 })
+  const [vocabPos, setVocabPos] = useState({ x: -1, y: -1 })
   const vocabDragging = useRef(false)
   const vocabOffset = useRef({ x: 0, y: 0 })
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount, setActiveSentence: setSpeechSentence } = useSpeech()
@@ -563,7 +563,7 @@ export default function Reader() {
           {showVocab && (
             <div
               className="fixed z-50 w-56 max-h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden select-none"
-              style={vocabPos.x ? { left: vocabPos.x, top: vocabPos.y } : { right: 16, top: '50%', transform: 'translateY(-50%)' }}
+              style={vocabPos.x >= 0 ? { left: vocabPos.x, top: vocabPos.y } : { right: 16, top: '50%', transform: 'translateY(-50%)' }}
             >
               <div
                 className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700 cursor-move active:cursor-grabbing"
@@ -572,7 +572,7 @@ export default function Reader() {
                   const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
                   vocabOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
                   // 如果还没设置过位置，用当前位置
-                  if (!vocabPos.x) setVocabPos({ x: rect.left, y: rect.top })
+                  if (vocabPos.x < 0) setVocabPos({ x: rect.left, y: rect.top })
                 }}
                 onMouseMove={(e) => {
                   if (!vocabDragging.current) return
@@ -584,7 +584,7 @@ export default function Reader() {
                   vocabDragging.current = true
                   const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
                   vocabOffset.current = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top }
-                  if (!vocabPos.x) setVocabPos({ x: rect.left, y: rect.top })
+                  if (vocabPos.x < 0) setVocabPos({ x: rect.left, y: rect.top })
                 }}
                 onTouchMove={(e) => {
                   if (!vocabDragging.current) return
