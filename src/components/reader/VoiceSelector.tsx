@@ -15,6 +15,9 @@ function VoiceSelector({ disabled }: Props) {
   const selectedVoiceURI = useReaderStore((s) => s.selectedVoiceURI)
   const setVoice = useReaderStore((s) => s.setVoice)
   const language = useSettingsStore((s) => s.language)
+  const appMode = useSettingsStore((s) => s.appMode)
+  const setAudiobookVoice = useSettingsStore((s) => s.setAudiobookVoice)
+  const setListeningVoice = useSettingsStore((s) => s.setListeningVoice)
 
   const loadVoices = useCallback(() => {
     setLoading(true)
@@ -50,8 +53,13 @@ function VoiceSelector({ disabled }: Props) {
   const handleSelect = useCallback((uri: string) => {
     setVoice(uri)
     useSettingsStore.getState().setPreferredVoice(uri)
+    if (appMode === 'listening') {
+      setListeningVoice(uri)
+    } else {
+      setAudiobookVoice(uri)
+    }
     setExpanded(false)
-  }, [setVoice])
+  }, [setVoice, appMode, setAudiobookVoice, setListeningVoice])
 
   const currentVoice = voices.find((v) => v.uri === selectedVoiceURI)
   const displayName: string = loading

@@ -8,6 +8,8 @@ interface SettingsStore extends AppSettings {
   setSpeechRate: (rate: number) => void
   setSpeechPitch: (pitch: number) => void
   setPreferredVoice: (uri: string) => void
+  setAudiobookVoice: (uri: string) => void
+  setListeningVoice: (uri: string) => void
   setLanguage: (lang: TtsLanguage) => void
   setAppMode: (mode: AppMode) => void
   setFontSize: (size: FontSize) => void
@@ -20,6 +22,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   speechRate: 1.0,
   speechPitch: 1.0,
   preferredVoiceURI: '',
+  audiobookVoiceURI: '',
+  listeningVoiceURI: '',
   language: 'zh-CN',
   appMode: 'audiobook',
   fontSize: 'md',
@@ -45,6 +49,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setPreferredVoice: (uri: string) => {
     set({ preferredVoiceURI: uri })
     saveSettings({ preferredVoiceURI: uri })
+  },
+
+  setAudiobookVoice: (uri: string) => {
+    set({ audiobookVoiceURI: uri })
+    saveSettings({ audiobookVoiceURI: uri })
+  },
+
+  setListeningVoice: (uri: string) => {
+    set({ listeningVoiceURI: uri })
+    saveSettings({ listeningVoiceURI: uri })
   },
 
   setLanguage: (lang: TtsLanguage) => {

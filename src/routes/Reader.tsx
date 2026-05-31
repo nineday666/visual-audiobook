@@ -103,9 +103,14 @@ export default function Reader() {
         totalListeningMs: b.progress.totalListeningMs,
       } : undefined)
 
-      // 从设置恢复首选语音
+      // 从设置恢复模式对应音色
       const settings = useSettingsStore.getState()
-      if (settings.preferredVoiceURI) {
+      const modeVoice = settings.appMode === 'listening'
+        ? settings.listeningVoiceURI
+        : settings.audiobookVoiceURI
+      if (modeVoice) {
+        setVoice(modeVoice)
+      } else if (settings.preferredVoiceURI) {
         setVoice(settings.preferredVoiceURI)
       }
       // 恢复上次倍速

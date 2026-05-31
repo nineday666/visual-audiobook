@@ -80,6 +80,8 @@ export async function getSettings(): Promise<AppSettings> {
     speechRate: 1.0,
     speechPitch: 1.0,
     preferredVoiceURI: '',
+    audiobookVoiceURI: '',
+    listeningVoiceURI: '',
     language: 'zh-CN',
     appMode: 'audiobook',
     fontSize: 'md',

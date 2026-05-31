@@ -25,7 +25,9 @@ export interface ReadingProgress {
 export interface AppSettings {
   speechRate: number
   speechPitch: number
-  preferredVoiceURI: string
+  preferredVoiceURI: string    // 默认音色（向后兼容）
+  audiobookVoiceURI: string    // 听书模式音色
+  listeningVoiceURI: string    // 听力模式音色
   language: TtsLanguage
   appMode: AppMode
   fontSize: FontSize
