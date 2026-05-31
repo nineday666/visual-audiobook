@@ -59,7 +59,9 @@ export default function Reader() {
   const setLanguage = useSettingsStore((s) => s.setLanguage)
   const appMode = useSettingsStore((s) => s.appMode)
   const [repeatCount, setLocalRepeatCount] = useState(2)
-  const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount } = useSpeech()
+  const [sentenceRepeat, setSentenceRepeat] = useState(false) // 单句复读模式
+  const [activeSentence, setActiveSentence] = useState('') // 当前选中的句子文本
+  const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount, setActiveSentence: setSpeechSentence } = useSpeech()
 
   // 加载已标记词汇
   useEffect(() => {
@@ -79,6 +81,19 @@ export default function Reader() {
       return next
     })
   }, [id])
+
+  const handleSelectSentence = useCallback((sentence: string) => {
+    if (activeSentence === sentence) {
+      // 取消选中 → 回到段落复读
+      setActiveSentence('')
+      setSpeechSentence('')
+      setSentenceRepeat(false)
+    } else {
+      setActiveSentence(sentence)
+      setSpeechSentence(sentence)
+      setSentenceRepeat(true)
+    }
+  }, [activeSentence, setSpeechSentence])
   useMediaSession()
 
   const paraRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -443,6 +458,8 @@ export default function Reader() {
               markedWords={appMode === 'listening' ? markedWords : undefined}
               onMarkWord={appMode === 'listening' ? handleMarkWord : undefined}
               isListeningMode={appMode === 'listening'}
+              activeSentence={appMode === 'listening' ? activeSentence : undefined}
+              onSelectSentence={appMode === 'listening' ? handleSelectSentence : undefined}
             />
           ))}
         </div>
@@ -484,16 +501,16 @@ export default function Reader() {
           </span>
         </div>
 
-        {/* 听力模式：复读次数 */}
+        {/* 听力模式：复读次数 + 单句模式 */}
         {appMode === 'listening' && (
-          <div className="mb-3 flex items-center justify-center gap-2">
+          <div className="mb-3 flex items-center justify-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">复读</span>
             {[1, 2, 3, 5, 0].map((n) => (
               <button
                 key={n}
-                onClick={() => { setLocalRepeatCount(n); setRepeatCount(n) }}
+                onClick={() => { setLocalRepeatCount(n); setRepeatCount(n); setSentenceRepeat(false); setActiveSentence('') }}
                 className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
-                  repeatCount === n
+                  repeatCount === n && !sentenceRepeat
                     ? 'bg-purple-500 text-white'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                 }`}
@@ -501,6 +518,22 @@ export default function Reader() {
                 {n === 0 ? '∞' : n === 1 ? '关' : `${n}遍`}
               </button>
             ))}
+            <span className="text-slate-300">|</span>
+            <button
+              onClick={() => { setSentenceRepeat(!sentenceRepeat); setActiveSentence('') }}
+              className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                sentenceRepeat ? 'bg-orange-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+              }`}
+            >
+              单句
+            </button>
+          </div>
+        )}
+        {sentenceRepeat && activeSentence && (
+          <div className="mb-3 text-center">
+            <span className="text-xs text-orange-500 bg-orange-50 dark:bg-orange-950/30 px-2 py-0.5 rounded">
+              复读中：{activeSentence.slice(0, 20)}{activeSentence.length > 20 ? '...' : ''}
+            </span>
           </div>
         )}
 

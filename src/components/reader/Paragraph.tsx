@@ -12,6 +12,13 @@ interface Props {
   markedWords?: Set<string>
   onMarkWord?: (word: string) => void
   isListeningMode?: boolean
+  activeSentence?: string
+  onSelectSentence?: (sentence: string) => void
+}
+
+// 按中英文标点切分句子
+function splitSentences(text: string): string[] {
+  return text.split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
 }
 
 // 按单词或汉字切分文本
@@ -41,7 +48,7 @@ function normalizeWord(w: string): string {
   return w.toLowerCase().replace(/[.,!?;:'"()\[\]{}，。！？；：""''（）【】\s]+/g, '').trim()
 }
 
-function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, markedWords, onMarkWord, isListeningMode }: Props) {
+function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, markedWords, onMarkWord, isListeningMode, activeSentence, onSelectSentence }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -67,21 +74,36 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
 
   // 渲染文本：朗读高亮 + 词汇标记
   const renderText = () => {
-    // 听力模式：分词渲染，支持点击标记
+    // 听力模式：按句子渲染 + 分词标记
     if (isListeningMode && markedWords && onMarkWord) {
-      const words = splitWords(text)
-      return words.map((w, i) => {
-        const key = normalizeWord(w)
-        if (!key) return <span key={i}>{w}</span>
-        const isMarked = markedWords.has(key)
+      const sentences = splitSentences(text)
+      return sentences.map((sentence, si) => {
+        const words = splitWords(sentence)
+        // 检查这句是否被选中
+        const sentenceKey = sentence.trim()
+        const isSentenceActive = activeSentence === sentenceKey
         return (
           <span
-            key={i}
-            className={`cursor-pointer ${isMarked ? 'bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5' : ''}`}
-            onClick={(e) => { e.stopPropagation(); onMarkWord(key) }}
-            title={isMarked ? '点击取消标记' : '点击标记生词'}
+            key={si}
+            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : 'hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}
+            onClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey) }}
+            title={isSentenceActive ? '点击取消' : '点击选中此句复读'}
           >
-            {w}
+            {words.map((w, i) => {
+              const key = normalizeWord(w)
+              if (!key) return <span key={i}>{w}</span>
+              const isMarked = markedWords.has(key)
+              return (
+                <span
+                  key={i}
+                  className={`cursor-pointer ${isMarked ? 'bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5' : ''}`}
+                  onClick={(e2) => { e2.stopPropagation(); onMarkWord(key) }}
+                  title={isMarked ? '点击取消标记' : '点击标记生词'}
+                >
+                  {w}
+                </span>
+              )
+            })}
           </span>
         )
       })

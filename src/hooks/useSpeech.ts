@@ -35,7 +35,8 @@ function buildBatch(paragraphs: string[], fromIndex: number, firstParaOffset = 0
 
 export function useSpeech() {
   const [mode, setMode] = useState<TtsMode>('local')
-  const repeatCountRef = useRef(1) // 听力模式复读次数
+  const repeatCountRef = useRef(1)
+  const activeSentenceRef = useRef('') // 单句复读文本
 
   const paragraphsRef = useRef<string[]>([])
   const currentIndexRef = useRef(0)
@@ -182,14 +183,16 @@ export function useSpeech() {
     return utter
   }, [speechPitch, setCurrentCharOffset, stopAction])
 
-  // === 听力模式：单段复读 ===
+  // === 听力模式：单段 / 单句复读 ===
   const speakListening = useCallback((paraIndex: number, repeatLeft?: number) => {
     const repeats = repeatLeft ?? repeatCountRef.current
     if (paraIndex >= paragraphsRef.current.length) {
       stopAction()
       return
     }
-    const text = paragraphsRef.current[paraIndex]
+    // 单句模式：优先用选中句子
+    const sentence = activeSentenceRef.current
+    const text = sentence || paragraphsRef.current[paraIndex]
     if (!text?.trim()) {
       speakListening(paraIndex + 1, repeatCountRef.current)
       return
@@ -216,14 +219,16 @@ export function useSpeech() {
 
     utter.onend = () => {
       if (!isPlayingRef.current) return
+      // 单句模式：永远重复这个句子，不推进段落
+      if (activeSentenceRef.current) {
+        speakListening(paraIndex, 0)
+        return
+      }
       if (repeats === 0) {
-        // 无限复读：一直重复当前段
         speakListening(paraIndex, 0)
       } else if (repeats > 1) {
-        // 继续复读当前段
         speakListening(paraIndex, repeats - 1)
       } else {
-        // 复读完 → 下一段
         speakListening(paraIndex + 1, repeatCountRef.current)
       }
     }
@@ -359,6 +364,7 @@ export function useSpeech() {
   }, [])
 
   const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
+  const setActiveSentence = useCallback((s: string) => { activeSentenceRef.current = s }, [])
 
-  return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback, setRepeatCount }
+  return { isSpeaking: isPlaying, ttsMode: mode, startPlayback, pausePlayback, resumePlayback, stopPlayback, setRepeatCount, setActiveSentence }
 }
