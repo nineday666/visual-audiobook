@@ -185,7 +185,7 @@ export function useSpeech() {
   }, [speechPitch, setCurrentCharOffset, stopAction])
 
   // === 听力模式：单段 / 单句复读 ===
-  const speakListening = useCallback((paraIndex: number, repeatLeft?: number) => {
+  const speakListening = useCallback((paraIndex: number, repeatLeft?: number, forceResetOffset = false) => {
     const repeats = repeatLeft ?? repeatCountRef.current
     if (paraIndex >= paragraphsRef.current.length) {
       stopAction()
@@ -211,18 +211,14 @@ export function useSpeech() {
     }
 
     // 单句模式锁定段落位置
-    const wasSentenceMode = !!activeSentenceRef.current
     if (!activeSentenceRef.current) {
       currentIndexRef.current = paraIndex
       setCurrentParagraph(paraIndex)
     } else {
       setCurrentParagraph(sentenceParaIndexRef.current)
     }
-    // 从单句模式退出时，重置偏移到段落开头
-    if (wasSentenceMode) {
+    if (forceResetOffset || activeSentenceRef.current) {
       setCurrentCharOffset(0)
-    } else if (activeSentenceRef.current) {
-      setCurrentCharOffset(0) // 进入单句模式也重置
     }
 
     // 高亮跟随：onboundary（桌面端）+ 计时器（手机端兜底）
@@ -399,7 +395,10 @@ export function useSpeech() {
     if (isPlayingRef.current && appMode === 'listening') {
       if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       speechSynthesis.cancel()
-      speakListening(s ? sentenceParaIndexRef.current : currentIndexRef.current)
+      const targetPara = s ? sentenceParaIndexRef.current : currentIndexRef.current
+      // 短暂延迟确保 cancel 在 Android 上完全生效
+      const reset = !s // 退出句子模式时强制重置位置
+      setTimeout(() => speakListening(targetPara, undefined, reset), 80)
     }
   }, [appMode, speakListening])
 
