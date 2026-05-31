@@ -60,10 +60,26 @@ export default function Reader() {
   const appMode = useSettingsStore((s) => s.appMode)
   // 模式切换时停止播放
   useEffect(() => { stopPlayback() }, [appMode])
+
+  // 全局拖动监听（单词本面板拖动时鼠标可能离开标题栏）
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!vocabDragging.current) return
+      setVocabPos({ x: e.clientX - vocabOffset.current.x, y: e.clientY - vocabOffset.current.y })
+    }
+    const onUp = () => { vocabDragging.current = false }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [])
+
   const [repeatCount, setLocalRepeatCount] = useState(2)
   const [sentenceRepeat, setSentenceRepeat] = useState(false) // 单句复读模式
   const [activeSentence, setActiveSentence] = useState('') // 当前选中的句子文本
   const [showVocab, setShowVocab] = useState(false)
+  const [vocabPos, setVocabPos] = useState({ x: 0, y: 0 })
+  const vocabDragging = useRef(false)
+  const vocabOffset = useRef({ x: 0, y: 0 })
   const { startPlayback, pausePlayback, resumePlayback, stopPlayback, ttsMode, setRepeatCount, setActiveSentence: setSpeechSentence } = useSpeech()
 
   // 加载已标记词汇
@@ -545,8 +561,37 @@ export default function Reader() {
           </div>
 
           {showVocab && (
-            <div className="fixed right-4 top-1/2 -translate-y-1/2 z-50 w-56 max-h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700">
+            <div
+              className="fixed z-50 w-56 max-h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden select-none"
+              style={vocabPos.x ? { left: vocabPos.x, top: vocabPos.y } : { right: 16, top: '50%', transform: 'translateY(-50%)' }}
+            >
+              <div
+                className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700 cursor-move active:cursor-grabbing"
+                onMouseDown={(e) => {
+                  vocabDragging.current = true
+                  const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
+                  vocabOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+                  // 如果还没设置过位置，用当前位置
+                  if (!vocabPos.x) setVocabPos({ x: rect.left, y: rect.top })
+                }}
+                onMouseMove={(e) => {
+                  if (!vocabDragging.current) return
+                  setVocabPos({ x: e.clientX - vocabOffset.current.x, y: e.clientY - vocabOffset.current.y })
+                }}
+                onMouseUp={() => { vocabDragging.current = false }}
+                onMouseLeave={() => { vocabDragging.current = false }}
+                onTouchStart={(e) => {
+                  vocabDragging.current = true
+                  const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
+                  vocabOffset.current = { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top }
+                  if (!vocabPos.x) setVocabPos({ x: rect.left, y: rect.top })
+                }}
+                onTouchMove={(e) => {
+                  if (!vocabDragging.current) return
+                  setVocabPos({ x: e.touches[0].clientX - vocabOffset.current.x, y: e.touches[0].clientY - vocabOffset.current.y })
+                }}
+                onTouchEnd={() => { vocabDragging.current = false }}
+              >
                 <span className="text-xs font-medium">📝 单词本 {markedWords.size > 0 ? `(${markedWords.size})` : ''}</span>
                 <div className="flex gap-1">
                   {markedWords.size > 0 && (
