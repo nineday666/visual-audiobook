@@ -219,11 +219,26 @@ export function useSpeech() {
     }
     setCurrentCharOffset(0)
 
-    // 听力模式用 onboundary 做高亮（同桌面端逻辑）
-    utter.onboundary = (e) => setCurrentCharOffset(e.charIndex)
-    utter.onstart = () => paraStartRef.current = Date.now()
+    // 高亮跟随：onboundary（桌面端）+ 计时器（手机端兜底）
+    let listenBoundaryFired = false
+    const listenStartTime = Date.now()
+    const listenTextLen = text.length
+    utter.onboundary = (e) => { listenBoundaryFired = true; setCurrentCharOffset(e.charIndex) }
+    utter.onstart = () => {
+      paraStartRef.current = Date.now()
+      if (activeTimerRef.current) clearInterval(activeTimerRef.current)
+      activeTimerRef.current = setInterval(() => {
+        if (listenBoundaryFired) return
+        const ci = Math.floor((Date.now() - listenStartTime) / 1000 * CHARS_PER_SECOND * rateRef.current)
+        const off = Math.min(ci, listenTextLen - 1)
+        if (off > useReaderStore.getState().currentCharOffset + 2) {
+          setCurrentCharOffset(off)
+        }
+      }, 500)
+    }
 
     utter.onend = () => {
+      if (activeTimerRef.current) { clearInterval(activeTimerRef.current); activeTimerRef.current = null }
       if (!isPlayingRef.current) return
       // 单句模式：永远重复这个句子，不推进段落
       if (activeSentenceRef.current) {
