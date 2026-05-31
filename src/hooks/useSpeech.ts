@@ -37,6 +37,7 @@ export function useSpeech() {
   const [mode, setMode] = useState<TtsMode>('local')
   const repeatCountRef = useRef(1)
   const activeSentenceRef = useRef('') // 单句复读文本
+  const sentenceParaIndexRef = useRef(0) // 进入单句模式时的段落位置，锁定不跳
 
   const paragraphsRef = useRef<string[]>([])
   const currentIndexRef = useRef(0)
@@ -209,10 +210,12 @@ export function useSpeech() {
       if (v) utter.voice = v
     }
 
-    // 单句模式不更新段落位置
+    // 单句模式锁定段落位置
     if (!activeSentenceRef.current) {
       currentIndexRef.current = paraIndex
       setCurrentParagraph(paraIndex)
+    } else {
+      setCurrentParagraph(sentenceParaIndexRef.current)
     }
     setCurrentCharOffset(0)
 
@@ -369,10 +372,10 @@ export function useSpeech() {
   const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
   const setActiveSentence = useCallback((s: string) => {
     activeSentenceRef.current = s
-    // 如果正在播放听力模式，立即中断并重新开始（用新句子或清句子）
+    if (s) sentenceParaIndexRef.current = currentIndexRef.current // 锁定段落
     if (isPlayingRef.current && appMode === 'listening') {
       speechSynthesis.cancel()
-      speakListening(currentIndexRef.current)
+      speakListening(s ? sentenceParaIndexRef.current : currentIndexRef.current)
     }
   }, [appMode, speakListening])
 
