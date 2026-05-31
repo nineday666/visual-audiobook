@@ -209,8 +209,11 @@ export function useSpeech() {
       if (v) utter.voice = v
     }
 
-    currentIndexRef.current = paraIndex
-    setCurrentParagraph(paraIndex)
+    // 单句模式不更新段落位置
+    if (!activeSentenceRef.current) {
+      currentIndexRef.current = paraIndex
+      setCurrentParagraph(paraIndex)
+    }
     setCurrentCharOffset(0)
 
     // 听力模式用 onboundary 做高亮（同桌面端逻辑）
