@@ -211,13 +211,19 @@ export function useSpeech() {
     }
 
     // 单句模式锁定段落位置
+    const wasSentenceMode = !!activeSentenceRef.current
     if (!activeSentenceRef.current) {
       currentIndexRef.current = paraIndex
       setCurrentParagraph(paraIndex)
     } else {
       setCurrentParagraph(sentenceParaIndexRef.current)
     }
-    setCurrentCharOffset(0)
+    // 从单句模式退出时，重置偏移到段落开头
+    if (wasSentenceMode) {
+      setCurrentCharOffset(0)
+    } else if (activeSentenceRef.current) {
+      setCurrentCharOffset(0) // 进入单句模式也重置
+    }
 
     // 高亮跟随：onboundary（桌面端）+ 计时器（手机端兜底）
     let listenBoundaryFired = false
