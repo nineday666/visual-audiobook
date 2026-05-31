@@ -58,6 +58,8 @@ export default function Reader() {
   const language = useSettingsStore((s) => s.language)
   const setLanguage = useSettingsStore((s) => s.setLanguage)
   const appMode = useSettingsStore((s) => s.appMode)
+  // 模式切换时停止播放
+  useEffect(() => { stopPlayback() }, [appMode])
   const [repeatCount, setLocalRepeatCount] = useState(2)
   const [sentenceRepeat, setSentenceRepeat] = useState(false) // 单句复读模式
   const [activeSentence, setActiveSentence] = useState('') // 当前选中的句子文本
@@ -543,23 +545,47 @@ export default function Reader() {
           </div>
 
           {showVocab && (
-            <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-xl max-h-32 overflow-y-auto">
-              {markedWords.size === 0 ? (
-                <p className="text-xs text-slate-400 text-center">点击文字标记生词</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {[...markedWords].map((w) => (
+            <div className="fixed right-4 top-1/2 -translate-y-1/2 z-50 w-56 max-h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700">
+                <span className="text-xs font-medium">📝 单词本 {markedWords.size > 0 ? `(${markedWords.size})` : ''}</span>
+                <div className="flex gap-1">
+                  {markedWords.size > 0 && (
                     <button
-                      key={w}
-                      onClick={() => handleMarkWord(w)}
-                      className="text-xs px-2 py-0.5 bg-yellow-200 dark:bg-yellow-800/40 text-yellow-800 dark:text-yellow-200 rounded hover:bg-red-200 dark:hover:bg-red-900/40 transition-colors"
-                      title="点击删除"
+                      onClick={() => {
+                        const text = [...markedWords].join('\n')
+                        navigator.clipboard.writeText(text).catch(() => {})
+                      }}
+                      className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 rounded hover:bg-blue-200 transition-colors"
                     >
-                      {w} ✕
+                      复制
                     </button>
-                  ))}
+                  )}
+                  <button
+                    onClick={() => setShowVocab(false)}
+                    className="text-xs px-1.5 text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
                 </div>
-              )}
+              </div>
+              <div className="p-3 overflow-y-auto max-h-56">
+                {markedWords.size === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">点击文字标记生词</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {[...markedWords].map((w) => (
+                      <button
+                        key={w}
+                        onClick={() => handleMarkWord(w)}
+                        className="text-xs px-2 py-0.5 bg-yellow-200 dark:bg-yellow-800/40 text-yellow-800 dark:text-yellow-200 rounded hover:bg-red-200 dark:hover:bg-red-900/40 transition-colors"
+                        title="点击删除"
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
           </>
