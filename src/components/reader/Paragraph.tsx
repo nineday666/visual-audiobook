@@ -112,8 +112,8 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
             key={si}
             className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : ''}`}
             onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey, index, sentenceStart) }}
-            onClick={(e) => { if (translationMode === 'click') { e.stopPropagation(); onRequestTranslate?.(sentenceKey) } }}
-            title={isSentenceActive ? '双击取消' : translationMode === 'click' ? '点击翻译' : '双击选中此句复读'}
+            onContextMenu={(e) => { if (translationMode === 'click') { e.preventDefault(); onRequestTranslate?.(sentenceKey) } }}
+            title={isSentenceActive ? '双击取消' : translationMode === 'click' ? '右键翻译' : '双击选中此句复读'}
           >
             {words.map((w, i) => {
               const key = normalizeWord(w)
