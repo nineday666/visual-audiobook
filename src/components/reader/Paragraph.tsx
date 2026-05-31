@@ -18,7 +18,11 @@ interface Props {
 
 // 按中英文标点切分句子
 function splitSentences(text: string): string[] {
-  return text.split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
+  // 匹配句末标点后跟空格或换行处切分
+  return text
+    .split(/(?<=[。！？.!?\n])\s*/)
+    .flatMap((s) => s.split(/(?<=[;；]\s*)/)) // 分号也切开
+    .filter((s) => s.trim())
 }
 
 // 按单词或汉字切分文本
@@ -85,9 +89,9 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
         return (
           <span
             key={si}
-            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : 'hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}
-            onClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey) }}
-            title={isSentenceActive ? '点击取消' : '点击选中此句复读'}
+            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : ''}`}
+            onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey) }}
+            title={isSentenceActive ? '双击取消' : '双击选中此句复读'}
           >
             {words.map((w, i) => {
               const key = normalizeWord(w)
