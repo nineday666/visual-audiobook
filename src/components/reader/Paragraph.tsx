@@ -13,7 +13,7 @@ interface Props {
   onMarkWord?: (word: string) => void
   isListeningMode?: boolean
   activeSentence?: string
-  onSelectSentence?: (sentence: string) => void
+  onSelectSentence?: (sentence: string, paraIndex: number) => void
 }
 
 // 按中英文标点切分句子
@@ -78,20 +78,26 @@ function Paragraph({ text, index, isActive, charOffset, paraRefs, onLongPress, m
 
   // 渲染文本：朗读高亮 + 词汇标记
   const renderText = () => {
-    // 听力模式：按句子渲染 + 分词标记
+    // 听力模式：按句子渲染 + 分词标记 + 朗读高亮
     if (isListeningMode && markedWords && onMarkWord) {
       const sentences = splitSentences(text)
+      // 确定当前朗读字符位于哪个句子中
+      let globalCharPos = 0
       return sentences.map((sentence, si) => {
+        const sentenceStart = globalCharPos
+        const sentenceLen = sentence.length
+        globalCharPos += sentenceLen
         const words = splitWords(sentence)
-        // 检查这句是否被选中
         const sentenceKey = sentence.trim()
         const isSentenceActive = activeSentence === sentenceKey
+        // 朗读高亮：检查当前 charOffset 是否落在此句中
+        const inThisSentence = isActive && charOffset >= sentenceStart && charOffset < sentenceStart + sentenceLen
         return (
           <span
             key={si}
-            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : ''}`}
-            onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey) }}
-            title={isSentenceActive ? '双击取消' : '双击选中此句复读'}
+            className={`inline cursor-pointer rounded px-0.5 ${isSentenceActive ? 'bg-orange-200 dark:bg-orange-800/40 outline outline-1 outline-orange-400' : inThisSentence ? 'word-highlight' : ''}`}
+            onDoubleClick={(e) => { e.stopPropagation(); onSelectSentence?.(sentenceKey, index) }}
+            title={isSentenceActive ? '双击取消' : inThisSentence ? '正在朗读此句' : '双击选中此句复读'}
           >
             {words.map((w, i) => {
               const key = normalizeWord(w)

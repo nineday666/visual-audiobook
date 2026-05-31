@@ -385,9 +385,9 @@ export function useSpeech() {
   }, [])
 
   const setRepeatCount = useCallback((n: number) => { repeatCountRef.current = Math.max(1, n) }, [])
-  const setActiveSentence = useCallback((s: string) => {
+  const setActiveSentence = useCallback((s: string, paraIndex?: number) => {
     activeSentenceRef.current = s
-    if (s) sentenceParaIndexRef.current = currentIndexRef.current // 锁定段落
+    if (s && paraIndex !== undefined) sentenceParaIndexRef.current = paraIndex
     if (isPlayingRef.current && appMode === 'listening') {
       speechSynthesis.cancel()
       speakListening(s ? sentenceParaIndexRef.current : currentIndexRef.current)

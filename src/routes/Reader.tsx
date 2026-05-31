@@ -86,15 +86,14 @@ export default function Reader() {
     })
   }, [id])
 
-  const handleSelectSentence = useCallback((sentence: string) => {
+  const handleSelectSentence = useCallback((sentence: string, paraIndex: number) => {
     if (activeSentence === sentence) {
-      // 取消选中 → 回到段落复读
       setActiveSentence('')
-      setSpeechSentence('')
+      setSpeechSentence('', 0)
       setSentenceRepeat(false)
     } else {
       setActiveSentence(sentence)
-      setSpeechSentence(sentence)
+      setSpeechSentence(sentence, paraIndex)
       setSentenceRepeat(true)
     }
   }, [activeSentence, setSpeechSentence])
