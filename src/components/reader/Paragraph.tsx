@@ -22,12 +22,11 @@ interface Props {
   onShowTranslation?: (sentence: string) => void
 }
 
-// 按中英文标点切分句子
-function splitSentences(text: string): string[] {
-  // 匹配句末标点后跟空格或换行处切分
+// 按中英文标点切分句子（共用函数）
+export function splitSentences(text: string): string[] {
   return text
     .split(/(?<=[。！？.!?\n])\s*/)
-    .flatMap((s) => s.split(/(?<=[;；]\s*)/)) // 分号也切开
+    .flatMap((s) => s.split(/(?<=[;；]\s*)/))
     .filter((s) => s.trim())
 }
 

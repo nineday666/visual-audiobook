@@ -17,7 +17,7 @@ import {
   findParagraphBySeconds,
 } from '../types'
 import { formatRate } from '../utils/format'
-import Paragraph from '../components/reader/Paragraph'
+import Paragraph, { splitSentences } from '../components/reader/Paragraph'
 import ContextMenu from '../components/common/ContextMenu'
 import AudioControls from '../components/reader/AudioControls'
 
@@ -97,7 +97,7 @@ export default function Reader() {
     const end = Math.min(book.paragraphs.length, currentParaIndex + RANGE)
     const sentences = new Set<string>()
     for (let i = start; i < end; i++) {
-      const parts = book.paragraphs[i].split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
+      const parts = splitSentences(book.paragraphs[i])
       for (const s of parts) {
         const key = s.trim()
         if (!translations.has(key) && !translating.has(key)) sentences.add(key)
