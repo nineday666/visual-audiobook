@@ -89,18 +89,21 @@ export default function Reader() {
     return () => { if (id) saveCache(id) }
   }, [id])
 
-  // 全部翻译模式：批量翻译（5句/次）
+  // 全部翻译：只翻译当前段落附近的句子（省钱 + 快）
   useEffect(() => {
     if (translationMode !== 'all' || !book || !hasApiKey()) return
+    const RANGE = 10 // 当前段前后各 10 段
+    const start = Math.max(0, currentParaIndex - RANGE)
+    const end = Math.min(book.paragraphs.length, currentParaIndex + RANGE)
     const sentences = new Set<string>()
-    for (const p of book.paragraphs) {
-      const parts = p.split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
+    for (let i = start; i < end; i++) {
+      const parts = book.paragraphs[i].split(/(?<=[。！？.!?\n])\s*/).filter((s) => s.trim())
       for (const s of parts) {
         const key = s.trim()
         if (!translations.has(key) && !translating.has(key)) sentences.add(key)
       }
     }
-    const arr = [...sentences]
+    const arr = [...sentences].filter((s) => !translations.has(s) && !translating.has(s))
     if (arr.length === 0) return
 
     const BATCH = 5
@@ -108,7 +111,6 @@ export default function Reader() {
     const timer = setInterval(async () => {
       if (i >= arr.length) { clearInterval(timer); return }
       const batch = arr.slice(i, i + BATCH)
-      // 标记为翻译中
       setTranslating((p) => { const n = new Set(p); batch.forEach((s) => n.add(s)); return n })
       try {
         const results = await translateBatch(batch)
@@ -123,7 +125,7 @@ export default function Reader() {
       i += BATCH
     }, 300)
     return () => clearInterval(timer)
-  }, [translationMode, book?.id, hasApiKey()])
+  }, [translationMode, book?.id, currentParaIndex, hasApiKey()])
 
   const handleMarkWord = useCallback((word: string) => {
     setMarkedWords((prev) => {
